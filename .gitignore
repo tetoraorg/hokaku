@@ -1,0 +1,5 @@
+/recorder
+/smoke
+/captures/
+.env
+*.pprof
