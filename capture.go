@@ -1,6 +1,6 @@
-// Package capture records an ISUCON application's fgprof profile, host metrics,
+// Package hokaku records an ISUCON application's fgprof profile, host metrics,
 // and rotated server logs, then uploads them after the measurement window.
-package capture
+package hokaku
 
 import (
 	"context"

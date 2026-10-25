@@ -28,7 +28,7 @@ func main() {
 func run(ctx context.Context, args []string, getenv func(string) string, output io.Writer) error {
 	flags := flag.NewFlagSet("recorder", flag.ContinueOnError)
 	flags.SetOutput(output)
-	var config capture.Config
+	var config hokaku.Config
 	var id string
 	flags.StringVar(&config.Endpoint, "endpoint", getenv("KOSAKANA_ENDPOINT"), "central server origin URL (or KOSAKANA_ENDPOINT)")
 	flags.StringVar(&config.Environment, "environment", "", "environment name (required)")
@@ -58,11 +58,11 @@ func run(ctx context.Context, args []string, getenv func(string) string, output 
 		}
 		config.Rotate = func(context.Context) error { return nil }
 	} else {
-		config.Rotate = capture.CommandRotator(command[0], command[1:]...)
+		config.Rotate = hokaku.CommandRotator(command[0], command[1:]...)
 	}
-	done := make(chan capture.Result, 1)
-	config.OnComplete = func(result capture.Result) { done <- result }
-	recorder, err := capture.New(config)
+	done := make(chan hokaku.Result, 1)
+	config.OnComplete = func(result hokaku.Result) { done <- result }
+	recorder, err := hokaku.New(config)
 	if err != nil {
 		return err
 	}

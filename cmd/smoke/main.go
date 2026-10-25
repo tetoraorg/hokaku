@@ -1,4 +1,4 @@
-// Smoke runs synthetic log traffic with a real fgprof/gopsutil capture.
+// Smoke runs synthetic log traffic with a real fgprof/gopsutil hokaku.
 package main
 
 import (
@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	capture "github.com/tetoraorg/hokaku"
+	"github.com/tetoraorg/hokaku"
 	"log"
 	"os"
 	"path/filepath"
@@ -27,8 +27,8 @@ func main() {
 	}
 	access := filepath.Join(*out, "nginx.log")
 	slow := filepath.Join(*out, "mysql.log")
-	done := make(chan capture.Result, 1)
-	recorder, err := capture.New(capture.Config{Endpoint: *endpoint, Token: os.Getenv("KOSAKANA_ACCESS_KEY"), Environment: "record-check", Host: *host, OutputDir: filepath.Join(*out, "captures"), AccessLog: access, SlowLog: slow, Duration: 2 * time.Second, Interval: 200 * time.Millisecond, OnComplete: func(r capture.Result) { done <- r }, Rotate: func(context.Context) error {
+	done := make(chan hokaku.Result, 1)
+	recorder, err := hokaku.New(hokaku.Config{Endpoint: *endpoint, Token: os.Getenv("KOSAKANA_ACCESS_KEY"), Environment: "record-check", Host: *host, OutputDir: filepath.Join(*out, "captures"), AccessLog: access, SlowLog: slow, Duration: 2 * time.Second, Interval: 200 * time.Millisecond, OnComplete: func(r hokaku.Result) { done <- r }, Rotate: func(context.Context) error {
 		if err := os.WriteFile(access, nil, 0600); err != nil {
 			return err
 		}

@@ -4,7 +4,7 @@ Goアプリに組み込むmoduleです。`Recorder.Start()`がNGINX・MySQLの�
 
 Go 1.26以上が必要です。依存はfgprof v0.9.5、gopsutil/v4 v4.26.9に固定しています。主対象はLinuxです。macOSでの開発検証は`darwin-host`として記録し、Linuxの観測とは区別します。OTel Collectorやdoolのインストールは不要です。
 
-公開Go moduleは `github.com/tetoraorg/hokaku`、Goのpackage名は `capture` です。受信API・ダッシュボードは別途kosakanaサーバーが必要で、このリポジトリには含まれません。利用には構築済みサーバーへのアクセスが必要です。サーバーの管理者から接続先URLとingest権限のAPIキー、対応するNGINXのJSONログ設定・MySQLのslow log設定・ログ切り替えヘルパーを受け取ってください。以下はこれらの準備を終えた環境向けの手順です。
+公開Go moduleは `github.com/tetoraorg/hokaku`、Goのpackage名は `hokaku` です。受信API・ダッシュボードは別途kosakanaサーバーが必要で、このリポジトリには含まれません。利用には構築済みサーバーへのアクセスが必要です。サーバーの管理者から接続先URLとingest権限のAPIキー、対応するNGINXのJSONログ設定・MySQLのslow log設定・ログ切り替えヘルパーを受け取ってください。以下はこれらの準備を終えた環境向けの手順です。
 
 ```sh
 go get github.com/tetoraorg/hokaku@latest
@@ -56,7 +56,7 @@ export KOSAKANA_ACCESS_KEY='生成したingest権限のキー本体'
 
 ## 未知形式のログを同梱する（Go module）
 
-Goの `capture.Config.RawLogs` に、ログの識別名とファイルパスを指定します。
+Goの `hokaku.Config.RawLogs` に、ログの識別名とファイルパスを指定します。
 
 ```go
 RawLogs: map[string]string{
@@ -86,10 +86,10 @@ import (
     "log"
     "os"
 
-    capture "github.com/tetoraorg/hokaku"
+    "github.com/tetoraorg/hokaku"
 )
 
-recorder, err := capture.New(capture.Config{
+recorder, err := hokaku.New(hokaku.Config{
     Endpoint:    os.Getenv("KOSAKANA_ENDPOINT"),
     Token:       os.Getenv("KOSAKANA_ACCESS_KEY"),
     Environment: "practice-1",
@@ -97,10 +97,10 @@ recorder, err := capture.New(capture.Config{
     OutputDir:   "/home/isucon/kosakana-captures",
     AccessLog:   "/var/log/nginx/kosakana-access.log",
     SlowLog:     "/var/log/mysql/kosakana-slow.log",
-    Rotate: capture.CommandRotator(
+    Rotate: hokaku.CommandRotator(
         "/usr/bin/sudo", "-n", "/usr/local/sbin/kosakana-rotate-logs",
     ),
-    OnComplete: func(result capture.Result) {
+    OnComplete: func(result hokaku.Result) {
         if result.Err != nil {
             log.Printf("kosakana capture %s failed: %v (files: %s)",
                 result.ID, result.Err, result.Directory)
@@ -133,7 +133,7 @@ if id, err := recorder.Start(); err != nil {
 
 ## 設定値一覧
 
-設定は`capture.New(capture.Config{...})`へ渡します。module自身は環境変数や設定ファイルを読み込みません。上の例の`KOSAKANA_ENDPOINT`と`KOSAKANA_ACCESS_KEY`は、組み込み先のアプリが`os.Getenv`で読み取って渡しています。設定はRecorder作成時に確定します。
+設定は`hokaku.New(hokaku.Config{...})`へ渡します。module自身は環境変数や設定ファイルを読み込みません。上の例の`KOSAKANA_ENDPOINT`と`KOSAKANA_ACCESS_KEY`は、組み込み先のアプリが`os.Getenv`で読み取って渡しています。設定はRecorder作成時に確定します。
 
 | フィールド    | 型                            | 必須・既定値                        | 用途・制約                                                                                                                                                                                                                   |
 | ------------- | ----------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -144,10 +144,10 @@ if id, err := recorder.Start(); err != nil {
 | `OutputDir`   | `string`                      | 必須                                | ローカル保存先の親ディレクトリ。`Start`時に未作成なら作成します。アプリの実行ユーザーに書き込み権限が必要です。相対パスはプロセスの作業ディレクトリを基準にします。                                                          |
 | `AccessLog`   | `string`                      | `""`                                | NGINXの専用JSONログのパス。空なら`access.log`を空のartifactにします。指定したログには読み取り権限が必要です。                                                                                                                |
 | `SlowLog`     | `string`                      | `""`                                | MySQLの専用FILE slow logのパス。空なら`slow.log`を空のartifactにします。指定したログには読み取り権限が必要です。                                                                                                             |
-| `Rotate`      | `func(context.Context) error` | 必須                                | ログ切り替えとreopenを行うコールバック。`Start`内で同期実行され、エラーなら開始を中止します。渡されるcontextの期限は10秒です。`capture.CommandRotator(...)`で固定コマンドを指定できます。                                    |
+| `Rotate`      | `func(context.Context) error` | 必須                                | ログ切り替えとreopenを行うコールバック。`Start`内で同期実行され、エラーなら開始を中止します。渡されるcontextの期限は10秒です。`hokaku.CommandRotator(...)`で固定コマンドを指定できます。                                    |
 | `Duration`    | `time.Duration`               | `0`なら`60 * time.Second`           | ログ切り替えとfgprof開始後の計測時間。`2 * Interval`以上、`120 * time.Second`以下にします。送信時間は含みません。                                                                                                            |
 | `Interval`    | `time.Duration`               | `0`なら`time.Second`                | ホストのCPU・メモリを採る間隔。`100 * time.Millisecond`以上、`Duration / 2`以下にします。fgprofのサンプリング間隔は変更しません。                                                                                            |
-| `OnComplete`  | `func(capture.Result)`        | `nil`（通知なし）                   | 計測・送信処理が終了したときにワーカーから呼ばれます。`Result`の`ID`・`Directory`・`Err`で保存先と成否を確認できます。`Start`が同期的に返すエラーや、手動の`Upload`では呼ばれません。この中から`Close`を呼ばないでください。 |
+| `OnComplete`  | `func(hokaku.Result)`        | `nil`（通知なし）                   | 計測・送信処理が終了したときにワーカーから呼ばれます。`Result`の`ID`・`Directory`・`Err`で保存先と成否を確認できます。`Start`が同期的に返すエラーや、手動の`Upload`では呼ばれません。この中から`Close`を呼ばないでください。 |
 | `HTTPClient`  | `*http.Client`                | `nil`（timeout 60秒のclientを作成） | 送信用client。指定するとコピーして使い、`Timeout == 0`なら60秒を設定します。`CheckRedirect`は指定内容にかかわらずredirect拒否へ置き換えます。                                                                                |
 
 必須項目の不足、URL・名前・計測時間の制約違反は`New`でエラーになります。ログの存在や権限、保存先への書き込み、ローテーションコマンドの実行可否は`Start`以降に確認されます。`Duration`と`Interval`は、`0`を既定値へ置き換えた後の組み合わせで検証されます。

@@ -1,4 +1,4 @@
-package capture
+package hokaku
 
 import (
 	"encoding/json"
