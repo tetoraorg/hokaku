@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func fakeCompleted(t *testing.T, dir string) {
@@ -109,7 +110,7 @@ func TestManifestPublicationDoesNotOverwriteExistingMarker(t *testing.T) {
 	}
 }
 
-func TestDescribeRejectsArtifactBeyond32MiB(t *testing.T) {
+func TestDescribeRejectsArtifactBeyond128MiB(t *testing.T) {
 	file, err := os.CreateTemp(t.TempDir(), "large-artifact-*")
 	if err != nil {
 		t.Fatal(err)
@@ -118,11 +119,56 @@ func TestDescribeRejectsArtifactBeyond32MiB(t *testing.T) {
 	if err = file.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.Truncate(path, (32<<20)+1); err != nil {
+	if err = os.Truncate(path, (128<<20)+1); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err = describe(path, "large-artifact"); err == nil || !strings.Contains(err.Error(), "invalid or oversized artifact") {
-		t.Fatalf("describe() error = %v, want 32 MiB size rejection", err)
+		t.Fatalf("describe() error = %v, want 128 MiB size rejection", err)
+	}
+}
+
+func TestDescribeAcceptsArtifactAbove32MiB(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "access.log")
+	if err := os.WriteFile(path, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(path, (32<<20)+1); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := describe(path, "access.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Bytes != (32<<20)+1 {
+		t.Fatalf("bytes = %d", entry.Bytes)
+	}
+}
+
+func TestManifestAccepts512MiBAndRejectsAnExtraByte(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range artifactNames {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Truncate(path, 128<<20); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeManifest(dir, "large", "test", "app-1", time.Now(), time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "manifest.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "raw-extra.log"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeManifest(dir, "large", "test", "app-1", time.Now(), time.Now().UnixMilli(), "raw-extra.log"); err == nil || !strings.Contains(err.Error(), "capture exceeds") {
+		t.Fatalf("expected capture size rejection, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "manifest.json")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected manifest: %v", err)
 	}
 }

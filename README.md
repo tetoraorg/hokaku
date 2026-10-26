@@ -68,7 +68,7 @@ RawLogs: map[string]string{
 
 対象は通常ファイルです。`Start` 内で既存の `Rotate` コールバックを実行した後、ファイルを開いた時点から計測終了までの追記分を採ります。開始前の内容は送信しません。RawLogsのためのローテーションは不要ですが、Configの `Rotate` は引き続き必須です。既知ログを採らない場合は `func(context.Context) error { return nil }` を指定できます。計測中に対象ファイルがローテーション・切り詰めされた場合や、ファイルを開けない場合はcaptureを失敗にします。
 
-識別名は先頭が半角英数字、以降は半角英数字・`_`・`.`・`-` の1〜64文字、最大16ファイルです。1ファイル32 MiB・capture全体128 MiBの制限とチェックサム検証は追加ログにも適用されます。`Recorder.Upload` で再送する際はmanifestの追加ログも送信するため、RawLogsを再指定する必要はありません。
+識別名は先頭が半角英数字、以降は半角英数字・`_`・`.`・`-` の1〜64文字、最大16ファイルです。1ファイル128 MiB・capture全体512 MiBの制限とチェックサム検証は追加ログにも適用されます。`Recorder.Upload` で再送する際はmanifestの追加ログも送信するため、RawLogsを再指定する必要はありません。
 
 ## アプリへ組み込む
 
@@ -180,7 +180,7 @@ if id, err := recorder.Start(); err != nil {
 
 HTTPSまたはloopbackへのSSHトンネルを使います。HTTPの外部アドレスやredirectへの送信は拒否します。ネットワークエラーと5xxは最大3回試行し、4xxはその場で失敗します。ローカルファイルは成功後も自動削除しません。送信が失敗した完了記録は、同じRecorderの`Upload(ctx, directory)`で再送できます。再送先のdirectoryは`OutputDir`直下の完了captureに限定し、ディレクトリ・manifest・artifactのsymlinkは拒否します。正常な再送は二重計数しません。
 
-1ファイル32 MiB・1ホスト128 MiBまでです。中央は既定で合計1 GiB・100 capture IDまで受け付け、上限時は拒否します（容量設定は`KOSAKANA_CAPTURE_MAX_BYTES`）。生ログは24時間で自動削除されません。必要なprofileを退避したうえで、中央アプリを停止して保存先を整理してください。再開時に容量を数え直します。DBの計測値は従来どおり24時間保持です。
+1ファイル128 MiB・1ホスト512 MiBまでです。中央は既定で合計4 GiB・100 capture IDまで受け付け、上限時は拒否します（合計容量は`KOSAKANA_CAPTURE_MAX_BYTES`、件数は`KOSAKANA_CAPTURE_MAX_RUNS`で変更可能）。hokaku側のファイル・ホスト上限は固定です。中央側は`KOSAKANA_CAPTURE_MAX_FILE_BYTES`・`KOSAKANA_CAPTURE_MAX_HOST_BYTES`でも上限を設定できるため、送信サイズ以上に設定してください。従来の32 MiB上限の中央を使う場合は、中央を先に更新してください。生ログは24時間で自動削除されません。必要なprofileを退避したうえで、中央アプリを停止して保存先を整理してください。再開時に容量を数え直します。DBの計測値は従来どおり24時間保持です。
 
 CPU使用率は累積秒の差分から計算し、初回・カウンターリセット・長い欠測区間は欠測にします。メモリ使用率は`1 - available / total`です。SQLはslow logの`SET timestamp`（欠けている場合は`# Time:`）、HTTPはJSONの`timestamp`を使い、回収時刻へ置き換えません。
 
