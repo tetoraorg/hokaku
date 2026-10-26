@@ -32,8 +32,8 @@ func isRawArtifact(name string) bool {
 	return ok && validRawLabel.MatchString(label)
 }
 
-const maxFileBytes int64 = 32 << 20
-const maxCaptureBytes int64 = 128 << 20
+const maxFileBytes int64 = 128 << 20
+const maxCaptureBytes int64 = 512 << 20
 
 var artifactNames = []string{hostJSONLName, capturenginx.ArtifactName, capturemysql.ArtifactName, capturefgprof.ProfileName}
 
@@ -78,7 +78,7 @@ func describe(path, name string) (fileEntry, error) {
 		return fileEntry{}, err
 	}
 	if n > maxFileBytes {
-		return fileEntry{}, errors.New("artifact exceeds 32 MiB")
+		return fileEntry{}, errors.New("artifact exceeds 128 MiB")
 	}
 	return fileEntry{name, n, hex.EncodeToString(hash.Sum(nil))}, nil
 }
@@ -105,7 +105,7 @@ func writeManifest(dir, id, environment, host string, started time.Time, endedAt
 		m.Files = append(m.Files, entry)
 	}
 	if total > maxCaptureBytes {
-		return errors.New("capture exceeds 128 MiB")
+		return errors.New("capture exceeds 512 MiB")
 	}
 	return publishManifest(dir, m)
 }

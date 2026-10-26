@@ -96,7 +96,7 @@ func (r *Recorder) Upload(ctx context.Context, dir string) error {
 		}
 	}
 	if total > maxCaptureBytes {
-		return errors.New("capture exceeds 128 MiB")
+		return errors.New("capture exceeds 512 MiB")
 	}
 	for _, name := range append(names, "manifest.json") {
 		target := strings.TrimRight(r.config.Endpoint, "/") + "/api/captures/" + url.PathEscape(m.CaptureID) + "/" + url.PathEscape(m.Host) + "/" + name
