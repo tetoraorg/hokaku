@@ -98,3 +98,19 @@ func TestHostSampleReaderErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestHostSampleNetworkIsOptional(t *testing.T) {
+	readers := defaultHostReaders()
+	readers.network = func(context.Context) (networkCounters, error) {
+		return networkCounters{ReceivedBytes: 120, SentBytes: 240}, nil
+	}
+	got, err := readHostSample(t.Context(), "test", "app-1", readers)
+	if err != nil || got.Network == nil || got.Network.ReceivedBytes != 120 || got.Network.SentBytes != 240 {
+		t.Fatalf("sample: %+v, error: %v", got, err)
+	}
+	readers.network = func(context.Context) (networkCounters, error) { return networkCounters{}, errors.New("unavailable") }
+	got, err = readHostSample(t.Context(), "test", "app-1", readers)
+	if err != nil || got.Network != nil {
+		t.Fatalf("sample: %+v, error: %v", got, err)
+	}
+}

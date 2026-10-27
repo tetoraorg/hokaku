@@ -9,9 +9,27 @@ import (
 	"runtime"
 	"time"
 
+	gopsutilnet "github.com/shirou/gopsutil/v4/net"
+
 	capturecpu "github.com/tetoraorg/hokaku/internal/cpu"
 	capturememory "github.com/tetoraorg/hokaku/internal/memory"
 )
+
+type networkCounters struct {
+	ReceivedBytes uint64 `json:"received_bytes"`
+	SentBytes     uint64 `json:"sent_bytes"`
+}
+
+func readNetwork(ctx context.Context) (networkCounters, error) {
+	stats, err := gopsutilnet.IOCountersWithContext(ctx, false)
+	if err != nil {
+		return networkCounters{}, err
+	}
+	if len(stats) != 1 {
+		return networkCounters{}, fmt.Errorf("expected aggregate network counters")
+	}
+	return networkCounters{ReceivedBytes: stats[0].BytesRecv, SentBytes: stats[0].BytesSent}, nil
+}
 
 type hostSample struct {
 	Version     int                    `json:"version"`
@@ -21,16 +39,18 @@ type hostSample struct {
 	Scope       string                 `json:"scope"`
 	CPU         capturecpu.Counters    `json:"cpu"`
 	Memory      capturememory.Snapshot `json:"memory"`
+	Network     *networkCounters       `json:"network,omitempty"`
 }
 
 type hostReaders struct {
-	cpu    func(context.Context) (capturecpu.Counters, error)
-	memory func(context.Context) (capturememory.Snapshot, error)
-	now    func() time.Time
+	network func(context.Context) (networkCounters, error)
+	cpu     func(context.Context) (capturecpu.Counters, error)
+	memory  func(context.Context) (capturememory.Snapshot, error)
+	now     func() time.Time
 }
 
 func defaultHostReaders() hostReaders {
-	return hostReaders{cpu: capturecpu.Read, memory: capturememory.Read, now: time.Now}
+	return hostReaders{cpu: capturecpu.Read, memory: capturememory.Read, network: readNetwork, now: time.Now}
 }
 
 func readHostSample(ctx context.Context, environment, hostname string, readers hostReaders) (hostSample, error) {
@@ -42,7 +62,14 @@ func readHostSample(ctx context.Context, environment, hostname string, readers h
 	if err != nil {
 		return hostSample{}, fmt.Errorf("memory snapshot: %w", err)
 	}
+	var network *networkCounters
+	if readers.network != nil {
+		if value, err := readers.network(ctx); err == nil {
+			network = &value
+		}
+	}
 	return hostSample{
+		Network:     network,
 		Version:     1,
 		At:          readers.now().UnixMilli(),
 		Environment: environment,

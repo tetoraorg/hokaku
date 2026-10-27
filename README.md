@@ -1,6 +1,6 @@
 # hokaku — initializeから60秒を記録する
 
-Goアプリに組み込むmoduleです。`Recorder.Start()`がNGINX・MySQLの専用ログを切り替え、アプリ自身のfgprofを開始します。その後はgoroutineがgopsutilで1秒ごとにホストのCPU・メモリを記録し、60秒後に計測を止め、4ファイルと検証用manifestをkosakana中央サーバーへ送ります。
+Goアプリに組み込むmoduleです。`Recorder.Start()`がNGINX・MySQLの専用ログを切り替え、アプリ自身のfgprofを開始します。その後はgoroutineがgopsutilで1秒ごとにホストのCPU・メモリ・ネットワークを記録し、60秒後に計測を止め、4ファイルと検証用manifestをkosakana中央サーバーへ送ります。
 
 Go 1.26以上が必要です。依存はfgprof v0.9.5、gopsutil/v4 v4.26.9に固定しています。主対象はLinuxです。macOSでの開発検証は`darwin-host`として記録し、Linuxの観測とは区別します。OTel Collectorやdoolのインストールは不要です。
 
@@ -170,7 +170,7 @@ if id, err := recorder.Start(); err != nil {
 
 | ファイル        | 内容                                                 |
 | --------------- | ---------------------------------------------------- |
-| `host.jsonl`    | gopsutilのCPU累積秒・メモリ総量/利用可能量・観測時刻 |
+| `host.jsonl`    | gopsutilのCPU累積秒・メモリ総量/利用可能量・ネットワーク送受信累積バイト・観測時刻 |
 | `access.log`    | 切り替え後のNGINX JSONログ                           |
 | `slow.log`      | 切り替え後のMySQL FILE slow log                      |
 | `fgprof.pprof`  | このGoプロセスの待ち時間を含むprofile                |
@@ -181,6 +181,8 @@ if id, err := recorder.Start(); err != nil {
 HTTPSまたはloopbackへのSSHトンネルを使います。HTTPの外部アドレスやredirectへの送信は拒否します。ネットワークエラーと5xxは最大3回試行し、4xxはその場で失敗します。ローカルファイルは成功後も自動削除しません。送信が失敗した完了記録は、同じRecorderの`Upload(ctx, directory)`で再送できます。再送先のdirectoryは`OutputDir`直下の完了captureに限定し、ディレクトリ・manifest・artifactのsymlinkは拒否します。正常な再送は二重計数しません。
 
 1ファイル128 MiB・1ホスト512 MiBまでです。中央は既定で合計4 GiB・100 capture IDまで受け付け、上限時は拒否します（合計容量は`KOSAKANA_CAPTURE_MAX_BYTES`、件数は`KOSAKANA_CAPTURE_MAX_RUNS`で変更可能）。hokaku側のファイル・ホスト上限は固定です。中央側は`KOSAKANA_CAPTURE_MAX_FILE_BYTES`・`KOSAKANA_CAPTURE_MAX_HOST_BYTES`でも上限を設定できるため、送信サイズ以上に設定してください。従来の32 MiB上限の中央を使う場合は、中央を先に更新してください。生ログは24時間で自動削除されません。必要なprofileを退避したうえで、中央アプリを停止して保存先を整理してください。再開時に容量を数え直します。DBの計測値は従来どおり24時間保持です。
+
+ネットワークは全インターフェースの合計（loopbackを含む）を記録します。取得に失敗した行ではネットワークを省略し、CPUとメモリの記録は続行します。対応するKosakana受信側を先に導入してください。旧受信側は追加フィールドを受け付けません。
 
 CPU使用率は累積秒の差分から計算し、初回・カウンターリセット・長い欠測区間は欠測にします。メモリ使用率は`1 - available / total`です。SQLはslow logの`SET timestamp`（欠けている場合は`# Time:`）、HTTPはJSONの`timestamp`を使い、回収時刻へ置き換えません。
 
