@@ -202,7 +202,7 @@ func (r *Recorder) record(ctx context.Context, dir, id string, started time.Time
 		return err
 	}
 	defer func() { result = errors.Join(result, metrics.close()) }()
-	readers := defaultHostReaders()
+	readers := defaultHostReaders(ctx)
 	sample := func() error {
 		row, err := readHostSample(ctx, r.config.Environment, r.config.Host, readers)
 		if err != nil {
