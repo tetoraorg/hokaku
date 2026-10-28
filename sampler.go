@@ -7,7 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
+
+	gopsutilcpu "github.com/shirou/gopsutil/v4/cpu"
 
 	capturecpu "github.com/tetoraorg/hokaku/internal/cpu"
 	capturememory "github.com/tetoraorg/hokaku/internal/memory"
@@ -19,18 +22,28 @@ type hostSample struct {
 	Environment string                 `json:"environment"`
 	Host        string                 `json:"host"`
 	Scope       string                 `json:"scope"`
+	CPUModel    string                 `json:"cpu_model,omitempty"`
 	CPU         capturecpu.Counters    `json:"cpu"`
 	Memory      capturememory.Snapshot `json:"memory"`
 }
 
 type hostReaders struct {
-	cpu    func(context.Context) (capturecpu.Counters, error)
-	memory func(context.Context) (capturememory.Snapshot, error)
-	now    func() time.Time
+	cpuModel string
+	cpu      func(context.Context) (capturecpu.Counters, error)
+	memory   func(context.Context) (capturememory.Snapshot, error)
+	now      func() time.Time
 }
 
-func defaultHostReaders() hostReaders {
-	return hostReaders{cpu: capturecpu.Read, memory: capturememory.Read, now: time.Now}
+func defaultHostReaders(ctx context.Context) hostReaders {
+	readers := hostReaders{cpu: capturecpu.Read, memory: capturememory.Read, now: time.Now}
+	info, err := gopsutilcpu.InfoWithContext(ctx)
+	if err == nil && len(info) > 0 {
+		model := strings.TrimSpace(info[0].ModelName)
+		if len(model) <= 512 {
+			readers.cpuModel = model
+		}
+	}
+	return readers
 }
 
 func readHostSample(ctx context.Context, environment, hostname string, readers hostReaders) (hostSample, error) {
@@ -48,6 +61,7 @@ func readHostSample(ctx context.Context, environment, hostname string, readers h
 		Environment: environment,
 		Host:        hostname,
 		Scope:       runtime.GOOS + "-host",
+		CPUModel:    readers.cpuModel,
 		CPU:         cpuValues,
 		Memory:      memoryValues,
 	}, nil

@@ -98,3 +98,23 @@ func TestHostSampleReaderErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestHostSampleIncludesCPUModel(t *testing.T) {
+	readers := hostReaders{
+		cpuModel: "Example CPU",
+		cpu:      func(context.Context) (capturecpu.Counters, error) { return capturecpu.Counters{}, nil },
+		memory:   func(context.Context) (capturememory.Snapshot, error) { return capturememory.Snapshot{}, nil },
+		now:      time.Now,
+	}
+	sample, err := readHostSample(t.Context(), "test", "app-1", readers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"cpu_model":"Example CPU"`) {
+		t.Fatalf("missing CPU model: %s", data)
+	}
+}
