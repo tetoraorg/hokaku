@@ -3,3 +3,9 @@
 /captures/
 .env
 *.pprof
+
+# Local overhead experiments
+/overhead
+/overhead-results*/
+/scan-benchmark.txt
+/overhead-results*.jsonl

@@ -200,3 +200,9 @@ go vet ./...
 中央も含む結合検証は、別のkosakanaリポジトリで`npm run record:check`を実行します。3ホスト分の合成HTTP/SQLログ、実gopsutil、実fgprofを使って、送信・再送・集計を確認します。実ISUCONベンチの得点や計測負荷はこのテストでは検証しません。
 
 参考: [fgprof](https://github.com/felixge/fgprof)、[gopsutil](https://github.com/shirou/gopsutil)。
+
+## プロセス別CPU・メモリ
+
+Linuxでは既定でプロセスのCPU累積時間・RSS・PID・開始時刻・実行名を収集し、`host.jsonl`に同梱します。
+対応するkosakanaで、mysqld・nginx・アプリなどの実行名ごとの合計とPID別内訳を確認できます。
+先に受信側を更新してください。[形式・欠測・負荷の制御](docs/process-metrics.md)、[負荷評価](docs/overhead.md)を参照してください。

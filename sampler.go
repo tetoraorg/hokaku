@@ -14,17 +14,19 @@ import (
 
 	capturecpu "github.com/tetoraorg/hokaku/internal/cpu"
 	capturememory "github.com/tetoraorg/hokaku/internal/memory"
+	captureprocess "github.com/tetoraorg/hokaku/internal/process"
 )
 
 type hostSample struct {
-	Version     int                    `json:"version"`
-	At          int64                  `json:"at"`
-	Environment string                 `json:"environment"`
-	Host        string                 `json:"host"`
-	Scope       string                 `json:"scope"`
-	CPUModel    string                 `json:"cpu_model,omitempty"`
-	CPU         capturecpu.Counters    `json:"cpu"`
-	Memory      capturememory.Snapshot `json:"memory"`
+	Version     int                      `json:"version"`
+	At          int64                    `json:"at"`
+	Environment string                   `json:"environment"`
+	Host        string                   `json:"host"`
+	Scope       string                   `json:"scope"`
+	CPUModel    string                   `json:"cpu_model,omitempty"`
+	CPU         capturecpu.Counters      `json:"cpu"`
+	Memory      capturememory.Snapshot   `json:"memory"`
+	Processes   *captureprocess.Snapshot `json:"processes,omitempty"`
 }
 
 type hostReaders struct {

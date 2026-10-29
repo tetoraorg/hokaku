@@ -102,6 +102,7 @@ func TestCaptureUploadsManifestLastAndPreservesArtifacts(t *testing.T) {
 		t.Fatalf("not enough samples: %d", len(lines))
 	}
 	var last int64
+	processScans := 0
 	for _, line := range lines {
 		var s hostSample
 		if err = json.Unmarshal([]byte(line), &s); err != nil {
@@ -110,7 +111,16 @@ func TestCaptureUploadsManifestLastAndPreservesArtifacts(t *testing.T) {
 		if s.At <= last || s.Memory.Total == 0 || s.Memory.Available > s.Memory.Total {
 			t.Fatal("invalid sample")
 		}
+		if s.Processes != nil {
+			processScans++
+			if s.Processes.At < s.At || s.Processes.Items == nil {
+				t.Fatal("invalid process scan")
+			}
+		}
 		last = s.At
+	}
+	if processScans != 1 {
+		t.Fatalf("process interval ignored: %d scans in 400ms", processScans)
 	}
 }
 func TestRotationFailureDoesNotStartWorker(t *testing.T) {
@@ -294,5 +304,15 @@ func TestStartWithIDDoesNotReuseExistingDirectory(t *testing.T) {
 	}
 	if profileActive.Load() {
 		t.Fatal("existing capture failure leaked profiler lock")
+	}
+}
+
+func TestProcessIntervalValidation(t *testing.T) {
+	for _, interval := range []time.Duration{time.Millisecond, -time.Second, 11 * time.Second} {
+		c := testConfig(t, "http://127.0.0.1:1")
+		c.ProcessInterval = interval
+		if _, err := New(c); err == nil {
+			t.Fatalf("accepted %v", interval)
+		}
 	}
 }

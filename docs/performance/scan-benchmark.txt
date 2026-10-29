@@ -1,0 +1,14 @@
+goos: linux
+goarch: arm64
+pkg: github.com/tetoraorg/hokaku/internal/process
+BenchmarkScanAndEncode/100-2         	    2419	    467502 ns/op	      8188 bytes/sample	  166952 B/op	    1013 allocs/op
+BenchmarkScanAndEncode/100-2         	    2445	    501487 ns/op	      8189 bytes/sample	  167110 B/op	    1013 allocs/op
+BenchmarkScanAndEncode/100-2         	    2524	    498062 ns/op	      8189 bytes/sample	  167064 B/op	    1013 allocs/op
+BenchmarkScanAndEncode/1000-2        	     183	   6503095 ns/op	     81990 bytes/sample	 1683037 B/op	   10077 allocs/op
+BenchmarkScanAndEncode/1000-2        	     183	   6290885 ns/op	     81990 bytes/sample	 1680256 B/op	   10077 allocs/op
+BenchmarkScanAndEncode/1000-2        	     205	   5776955 ns/op	     81990 bytes/sample	 1687061 B/op	   10078 allocs/op
+BenchmarkScanAndEncode/2048-2        	      98	  12005179 ns/op	    168975 bytes/sample	 3655361 B/op	   20631 allocs/op
+BenchmarkScanAndEncode/2048-2        	     102	  11732917 ns/op	    168975 bytes/sample	 3614404 B/op	   20629 allocs/op
+BenchmarkScanAndEncode/2048-2        	     104	  11504508 ns/op	    168974 bytes/sample	 3656392 B/op	   20631 allocs/op
+PASS
+ok  	github.com/tetoraorg/hokaku/internal/process	11.142s
