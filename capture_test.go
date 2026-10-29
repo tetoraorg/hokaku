@@ -377,3 +377,81 @@ func TestProcessIntervalValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordingDurationUpperBound(t *testing.T) {
+	for _, tc := range []struct {
+		duration time.Duration
+		valid    bool
+	}{{0, true}, {240 * time.Second, true}, {240*time.Second + time.Nanosecond, false}} {
+		c := testConfig(t, "http://127.0.0.1:1")
+		c.Duration = tc.duration
+		r, err := New(c)
+		if (err == nil) != tc.valid {
+			t.Fatalf("duration %s: %v", tc.duration, err)
+		}
+		if r != nil {
+			defer r.Close()
+			if tc.duration == 0 && r.config.Duration != 60*time.Second {
+				t.Fatal("default recording duration changed")
+			}
+		}
+	}
+}
+
+func TestUploadTimeoutIsOptIn(t *testing.T) {
+	for _, client := range []*http.Client{nil, {}, {Timeout: 17 * time.Second}} {
+		c := testConfig(t, "http://127.0.0.1:1")
+		c.HTTPClient = client
+		r, err := New(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Close()
+		want := time.Duration(0)
+		if client != nil {
+			want = client.Timeout
+		}
+		if r.client.Timeout != want {
+			t.Fatalf("timeout = %s, want %s", r.client.Timeout, want)
+		}
+		if client != nil && (client == r.client || client.CheckRedirect != nil) {
+			t.Fatal("caller HTTP client was mutated")
+		}
+	}
+}
+
+func TestUnlimitedUploadStillHonorsCancellation(t *testing.T) {
+	entered := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_, _ = io.Copy(io.Discard, req.Body)
+		close(entered)
+		<-req.Context().Done()
+	}))
+	defer server.Close()
+	c := testConfig(t, server.URL)
+	dir := filepath.Join(c.OutputDir, "cancel-upload")
+	fakeCompleted(t, dir)
+	r, err := New(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- r.Upload(ctx, dir) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("upload did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("upload cancellation: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("upload ignored cancellation")
+	}
+}

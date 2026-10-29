@@ -145,10 +145,10 @@ if id, err := recorder.Start(); err != nil {
 | `AccessLog`   | `string`                      | `""`                                | NGINXの専用JSONログのパス。空なら`access.log`を空のartifactにします。指定したログには読み取り権限が必要です。                                                                                                                |
 | `SlowLog`     | `string`                      | `""`                                | MySQLの専用FILE slow logのパス。空なら`slow.log`を空のartifactにします。指定したログには読み取り権限が必要です。                                                                                                             |
 | `Rotate`      | `func(context.Context) error` | 必須                                | ログ切り替えとreopenを行うコールバック。`Start`内で同期実行され、エラーなら開始を中止します。渡されるcontextの期限は10秒です。`hokaku.CommandRotator(...)`で固定コマンドを指定できます。                                    |
-| `Duration`    | `time.Duration`               | `0`なら`60 * time.Second`           | ログ切り替えとfgprof開始後の計測時間。`2 * Interval`以上、`120 * time.Second`以下にします。送信時間は含みません。                                                                                                            |
+| `Duration`    | `time.Duration`               | `0`なら`60 * time.Second`           | ログ切り替えとfgprof開始後の計測時間。`2 * Interval`以上、`240 * time.Second`以下にします。送信時間は含みません。                                                                                                            |
 | `Interval`    | `time.Duration`               | `0`なら`time.Second`                | ホストのCPU・メモリを採る間隔。`100 * time.Millisecond`以上、`Duration / 2`以下にします。fgprofのサンプリング間隔は変更しません。                                                                                            |
 | `OnComplete`  | `func(hokaku.Result)`        | `nil`（通知なし）                   | 計測・送信処理が終了したときにワーカーから呼ばれます。`Result`の`ID`・`Directory`・`Err`で保存先と成否を確認できます。`Start`が同期的に返すエラーや、手動の`Upload`では呼ばれません。この中から`Close`を呼ばないでください。 |
-| `HTTPClient`  | `*http.Client`                | `nil`（timeout 60秒のclientを作成） | 送信用client。指定するとコピーして使い、`Timeout == 0`なら60秒を設定します。`CheckRedirect`は指定内容にかかわらずredirect拒否へ置き換えます。                                                                                |
+| `HTTPClient`  | `*http.Client`                | `nil`（送信全体の時間制限なし） | 送信用client。指定するとコピーして使い、`Timeout == 0`は時間制限なし、正の値は指定した制限を維持します。接続確立のタイムアウトと`Close`・`Upload`のcontextによる中断は有効です。`CheckRedirect`は指定内容にかかわらずredirect拒否へ置き換えます。                                                                                |
 
 必須項目の不足、URL・名前・計測時間の制約違反は`New`でエラーになります。ログの存在や権限、保存先への書き込み、ローテーションコマンドの実行可否は`Start`以降に確認されます。`Duration`と`Interval`は、`0`を既定値へ置き換えた後の組み合わせで検証されます。
 
@@ -188,7 +188,7 @@ CPU使用率は累積秒の差分から計算し、初回・カウンターリ�
 
 環境名を揃え、ホスト名は各サーバーで変えます。Startを呼んだGoプロセスと、そのホストのログ・メトリクスを採ります。複数ホストを1つのcaptureにまとめる場合は、開始通知を行う側で共通IDを決め、各アプリで`recorder.StartWithID("bench-001")`を呼びます。中央は同じIDの各ホストをまとめて保持・取り込みし、既存のベンチsnapshotを更新します。後から別ホストが届いた場合や再送した場合も、編集済みのスコア・PASS/FAIL・メモは維持します。IDは毎回変え、同じローカルディレクトリを再利用しません。中央と各ホストの時計はNTPで同期してください。共通IDは時計ずれの補正や、予定した全ホストの到着保証を行うものではありません。別サーバーへの開始通知そのものを自動配信する機能はないため、各アプリへ同じIDを渡す連携が必要です。`Start()`だけを各ホストで呼ぶとそれぞれ別IDのcaptureになります。
 
-既定の60秒はStartからの時間です。ISUCON14の負荷フェーズはinitialize後の追加準備より後に始まるため、負荷フェーズ全体を厳密に覆う保証はありません。`Duration`で120秒まで変更できます。初期化呼び出しと実負荷区間の違いを残して比較してください。
+既定の60秒はStartからの時間です。ISUCON14の負荷フェーズはinitialize後の追加準備より後に始まるため、負荷フェーズ全体を厳密に覆う保証はありません。`Duration`で240秒まで変更できます。初期化呼び出しと実負荷区間の違いを残して比較してください。
 
 ## 検証
 
