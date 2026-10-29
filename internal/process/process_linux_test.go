@@ -44,26 +44,26 @@ func fakeProc(t testing.TB, n int) string {
 }
 func TestScanBoundsAndFailures(t *testing.T) {
 	root := fakeProc(t, 3)
-	s := scan(t.Context(), root, 100, nil, time.Second, 2)
+	s := scan(t.Context(), root, 100, nil, 2)
 	if s.Status != "partial" || !s.Truncated || len(s.Items) != 2 {
 		t.Fatalf("%+v", s)
 	}
 	if err := os.Remove(filepath.Join(root, "2", "stat")); err != nil {
 		t.Fatal(err)
 	}
-	s = scan(t.Context(), root, 100, nil, time.Second, 10)
+	s = scan(t.Context(), root, 100, nil, 10)
 	if s.Status != "partial" || s.Skipped != 1 || s.Truncated || len(s.Items) != 2 {
 		t.Fatalf("%+v", s)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if s := scan(ctx, root, 100, nil, time.Second, 10); !s.Truncated || len(s.Items) != 0 {
+	if s := scan(ctx, root, 100, nil, 10); !s.Truncated || len(s.Items) != 0 {
 		t.Fatalf("%+v", s)
 	}
-	if s := scan(t.Context(), root, 100, nil, 0, 10); !s.Truncated {
+	if s := scan(t.Context(), root, 100, nil, 10); s.Truncated {
 		t.Fatalf("%+v", s)
 	}
-	if s := scan(t.Context(), root+"/missing", 100, nil, time.Second, 10); s.Status != "unavailable" {
+	if s := scan(t.Context(), root+"/missing", 100, nil, 10); s.Status != "unavailable" {
 		t.Fatal(s)
 	}
 }
@@ -86,7 +86,7 @@ func BenchmarkScanAndEncode(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				s := scan(context.Background(), root, 100, nil, time.Hour, MaxProcesses)
+				s := scan(context.Background(), root, 100, nil, MaxProcesses)
 				data, err := json.Marshal(s)
 				if err != nil {
 					b.Fatal(err)
@@ -96,4 +96,32 @@ func BenchmarkScanAndEncode(b *testing.B) {
 		})
 	}
 
+}
+
+func TestScanSurvivesSchedulerDelay(t *testing.T) {
+	root := fakeProc(t, 3)
+	reads := 0
+	s := scanWithReader(t.Context(), root, 100, nil, 10, func(path string) ([]byte, error) {
+		reads++
+		if reads == 1 {
+			time.Sleep(35 * time.Millisecond)
+		}
+		return os.ReadFile(path)
+	})
+	if s.Status != "ok" || s.Truncated || len(s.Items) != 3 || s.DurationMS < 25 {
+		t.Fatalf("scheduler delay discarded valid processes: %+v", s)
+	}
+}
+
+func TestScanCancelsBetweenReads(t *testing.T) {
+	root := fakeProc(t, 3)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	s := scanWithReader(ctx, root, 100, nil, 10, func(path string) ([]byte, error) {
+		cancel()
+		return os.ReadFile(path)
+	})
+	if s.Status != "partial" || !s.Truncated || len(s.Items) != 1 {
+		t.Fatalf("cancellation must preserve completed reads: %+v", s)
+	}
 }
