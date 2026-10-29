@@ -15,17 +15,20 @@ import (
 	"github.com/tklauser/go-sysconf"
 )
 
-// Bound time spent walking /proc. Local procfs reads are not preemptible; the
-// budget is checked between reads, so this is a soft bound, not a deadline.
-const scanBudget = 25 * time.Millisecond
-
 var clockTicks, clockErr = sysconf.Sysconf(sysconf.SC_CLK_TCK)
 
 func read(ctx context.Context) *Snapshot {
-	return scan(ctx, "/proc", clockTicks, clockErr, scanBudget, MaxProcesses)
+	return scan(ctx, "/proc", clockTicks, clockErr, MaxProcesses)
 }
 
-func scan(ctx context.Context, root string, ticks int64, tickErr error, budget time.Duration, limit int) *Snapshot {
+// Bound work by process count and cancellation, not wall-clock time: scheduler
+// contention during a benchmark must not discard the tail of every /proc scan.
+// Like the OTel hostmetrics process scraper, keep successful per-process reads.
+func scan(ctx context.Context, root string, ticks int64, tickErr error, limit int) *Snapshot {
+	return scanWithReader(ctx, root, ticks, tickErr, limit, os.ReadFile)
+}
+
+func scanWithReader(ctx context.Context, root string, ticks int64, tickErr error, limit int, readFile func(string) ([]byte, error)) *Snapshot {
 	started := time.Now()
 	s := &Snapshot{At: started.UnixMilli(), Status: "ok", Items: make([]Counter, 0)}
 	defer func() { s.DurationMS = float64(time.Since(started)) / float64(time.Millisecond) }()
@@ -52,13 +55,13 @@ func scan(ctx context.Context, root string, ticks int64, tickErr error, budget t
 			if err != nil || pid <= 0 {
 				continue
 			}
-			if ctx.Err() != nil || time.Since(started) >= budget || attempts >= limit {
+			if ctx.Err() != nil || attempts >= limit {
 				s.Status = "partial"
 				s.Truncated = true
 				return s
 			}
 			attempts++
-			data, err := os.ReadFile(filepath.Join(root, name, "stat"))
+			data, err := readFile(filepath.Join(root, name, "stat"))
 			if err != nil {
 				s.Skipped++
 				s.Status = "partial"

@@ -23,9 +23,10 @@ Linuxでは既定で1秒ごとに、見えるPIDの`/proc/<pid>/stat`を読み�
 ホスト間隔が長い場合はそれ以上の頻度にはなりません。`Config.DisableProcessMetrics: true`で無効化できます。
 CLIでは`--process-interval 2s`、`--disable-process-metrics`です。
 
-各走査は最大2,048 PIDの読み取り試行、時間予算25msです。予算は読み取り間にチェックするソフト上限であり、
-スケジューラの遅延や進行中のprocfs読み取りを強制中断するものではありません。
-`duration_ms`で実時間、`skipped`で読み取り失敗数、`truncated`で予算・件数上限を記録します。
+各走査は最大2,048 PIDの読み取り試行で制限し、読み取り間でcontextのキャンセルを確認します。
+旧25msの経過時間制限は撤去しました。CPU競合によるスケジューラ待ちで後半のPIDを繰り返し捨てないためです。
+進行中のprocfs読み取りは強制中断できず、大量のPIDや高負荷では走査がホスト計測tickを遅らせることがあります。
+`duration_ms`で実時間、`skipped`で読み取り失敗数、`truncated`でキャンセル・件数上限を記録します。
 上限時のPID集合はCPU上位順ではなくprocfs列挙順です。並列走査・追いつくための追加走査は行いません。
 
 `status`は`ok`、`partial`、`unavailable`のいずれかです。プロセス終了、権限不足、上限到達などで
@@ -42,3 +43,10 @@ fgprofは計測を組み込んだGoプロセスのgoroutineを観測するため
 計測終了後に行います。負荷フェーズが設定Durationを超えると、それらが負荷と重なる可能性があります。
 
 測定方法と実測値は[負荷評価](overhead.md)を参照してください。
+
+## 収集方法の参考
+
+[OpenTelemetry Collector process scraper](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/hostmetricsreceiver/internal/scraper/processscraper/process_scraper.go)
+はプロセスごとの累積CPU時間を取得し、部分的なエラーでも成功したメトリクスを保持します。
+hokakuもこの方式を継続します。全プロセスへの多数の属性問い合わせは避け、1 PIDにつきstatの1回の読み取りで
+CPU時間・RSS・起動時刻を得ます。件数制限は残るため、2,048 PIDを超える環境ではpartialになります。

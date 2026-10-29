@@ -53,7 +53,7 @@ fgprofのprofileは各試行で保存し、pprofとしてparseしてworkloadとp
 
 Linux上に合成したproc statファイルを100/1,000/2,048個作り、走査とJSON化を測定しました。
 ウォームな通常ファイルを使う単体ベンチであり、実procfs・CPU競合・cold cacheの上限保証ではありません。
-このベンチのみ走査時間上限を外し、全件を処理しています。実装の上限は25msのソフト予算です。
+このベンチは全件を処理しています。現行実装も25msの経過時間制限を撤去し、最大2,048 PIDの試行とcontextキャンセルで制御します。
 
 ```sh
 go test ./internal/process -run '^$' -bench BenchmarkScanAndEncode -benchtime=1s -count=3
@@ -114,7 +114,7 @@ CPU固定も物理ホストの独占を意味しません。数%の差には環�
 
 この条件では、追加したプロセス収集単独が大きなボトルネックになる兆候はありませんでした。
 ただし追加時のmixed req/sは約2%低下しており、影響ゼロとは扱えません。
-プロセス数・CPU余力・GC状態によって変わるので、25ms予算も性能劣化率の保証ではありません。
+プロセス数・CPU余力・GC状態によって変わるので、件数上限も性能劣化率の保証ではありません。
 
 **既存のfgprofを含む計測全体の影響は無視できません。** 1,000待機goroutineを置いたmixedでは、
 計測なし比でreq/sが約9%低下し、p95が約28%増えました。
@@ -129,3 +129,11 @@ fgprofだけでもreq/sが約8.6%低下しており、追加走査だけに原�
 待機goroutineの時間も分母に入るため、`profile_scan_ns / profile_total_ns`をCPU占有率としては示しません。
 
 単体走査ベンチの生出力: [scan-benchmark.txt](performance/scan-benchmark.txt)。
+
+
+## 25ms制限撤去時の確認（2026-10-29）
+
+Linux amd64 / Ryzen Threadripper 7960X、テスト用statファイルを用いた`BenchmarkScanAndEncode`、
+`-test.benchtime=100ms`では100 PIDで0.89ms、1,000 PIDで9.18ms、2,048 PIDで18.91msでした。
+実際のprocfsやCPU飽和下の値・性能保証ではありません。別の回帰テストでは最初の読み取りに35msの待機を
+挟んでも全3 PIDを取得し、キャンセル時には取得済み値を保持して次の読み取り前に停止することを確認しています。
