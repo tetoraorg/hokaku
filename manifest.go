@@ -32,9 +32,6 @@ func isRawArtifact(name string) bool {
 	return ok && validRawLabel.MatchString(label)
 }
 
-const maxFileBytes int64 = 128 << 20
-const maxCaptureBytes int64 = 512 << 20
-
 var artifactNames = []string{hostJSONLName, capturenginx.ArtifactName, capturemysql.ArtifactName, capturefgprof.ProfileName}
 
 type fileEntry struct {
@@ -69,16 +66,13 @@ func describe(path, name string) (fileEntry, error) {
 	if err != nil {
 		return fileEntry{}, err
 	}
-	if !os.SameFile(before, info) || !info.Mode().IsRegular() || info.Size() > maxFileBytes {
-		return fileEntry{}, errors.New("invalid or oversized artifact")
+	if !os.SameFile(before, info) || !info.Mode().IsRegular() {
+		return fileEntry{}, errors.New("invalid artifact")
 	}
 	hash := sha256.New()
-	n, err := io.Copy(hash, io.LimitReader(f, maxFileBytes+1))
+	n, err := io.Copy(hash, f)
 	if err != nil {
 		return fileEntry{}, err
-	}
-	if n > maxFileBytes {
-		return fileEntry{}, errors.New("artifact exceeds 128 MiB")
 	}
 	return fileEntry{name, n, hex.EncodeToString(hash.Sum(nil))}, nil
 }
@@ -95,17 +89,12 @@ func writeManifest(dir, id, environment, host string, started time.Time, endedAt
 		StartedAt:   started.UnixMilli(),
 		EndedAt:     endedAt,
 	}
-	var total int64
 	for _, name := range append(append([]string{}, artifactNames...), rawNames...) {
 		entry, err := describe(filepath.Join(dir, name), name)
 		if err != nil {
 			return err
 		}
-		total += entry.Bytes
 		m.Files = append(m.Files, entry)
-	}
-	if total > maxCaptureBytes {
-		return errors.New("capture exceeds 512 MiB")
 	}
 	return publishManifest(dir, m)
 }

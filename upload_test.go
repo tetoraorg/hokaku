@@ -110,7 +110,7 @@ func TestManifestPublicationDoesNotOverwriteExistingMarker(t *testing.T) {
 	}
 }
 
-func TestDescribeRejectsArtifactBeyond128MiB(t *testing.T) {
+func TestDescribeAcceptsArtifactBeyond128MiB(t *testing.T) {
 	file, err := os.CreateTemp(t.TempDir(), "large-artifact-*")
 	if err != nil {
 		t.Fatal(err)
@@ -123,8 +123,9 @@ func TestDescribeRejectsArtifactBeyond128MiB(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err = describe(path, "large-artifact"); err == nil || !strings.Contains(err.Error(), "invalid or oversized artifact") {
-		t.Fatalf("describe() error = %v, want 128 MiB size rejection", err)
+	entry, err := describe(path, "large-artifact")
+	if err != nil || entry.Bytes != (128<<20)+1 {
+		t.Fatalf("describe() = %v, %v, want complete artifact", entry, err)
 	}
 }
 
@@ -145,7 +146,7 @@ func TestDescribeAcceptsArtifactAbove32MiB(t *testing.T) {
 	}
 }
 
-func TestManifestAccepts512MiBAndRejectsAnExtraByte(t *testing.T) {
+func TestManifestAcceptsMoreThan512MiB(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range artifactNames {
 		path := filepath.Join(dir, name)
@@ -165,10 +166,7 @@ func TestManifestAccepts512MiBAndRejectsAnExtraByte(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "raw-extra.log"), []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeManifest(dir, "large", "test", "app-1", time.Now(), time.Now().UnixMilli(), "raw-extra.log"); err == nil || !strings.Contains(err.Error(), "capture exceeds") {
-		t.Fatalf("expected capture size rejection, got %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "manifest.json")); !os.IsNotExist(err) {
-		t.Fatalf("unexpected manifest: %v", err)
+	if err := writeManifest(dir, "large", "test", "app-1", time.Now(), time.Now().UnixMilli(), "raw-extra.log"); err != nil {
+		t.Fatalf("writeManifest() failed: %v", err)
 	}
 }
