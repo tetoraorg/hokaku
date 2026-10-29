@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -259,7 +260,7 @@ func (r *Recorder) record(ctx context.Context, dir, id string, started time.Time
 			if err = metrics.syncAndClose(); err != nil {
 				return err
 			}
-			if err = logs.CopyTo(dir, maxFileBytes); err != nil {
+			if err = logs.CopyTo(dir, math.MaxInt64); err != nil {
 				return err
 			}
 			return writeManifest(dir, id, r.config.Environment, r.config.Host, started, ended, r.rawArtifactNames()...)

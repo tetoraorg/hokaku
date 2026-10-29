@@ -123,6 +123,67 @@ func TestCaptureUploadsManifestLastAndPreservesArtifacts(t *testing.T) {
 		t.Fatalf("process interval ignored: %d scans in 400ms", processScans)
 	}
 }
+
+func TestCaptureUploadsLogLargerThan128MiB(t *testing.T) {
+	const size = (128 << 20) + 1
+	var mu sync.Mutex
+	var names []string
+	var slowBytes int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		n, err := io.Copy(io.Discard, req.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		name := filepath.Base(req.URL.Path)
+		names = append(names, name)
+		if name == "slow.log" {
+			slowBytes = n
+		}
+	}))
+	defer server.Close()
+	c := testConfig(t, server.URL)
+	rotate := c.Rotate
+	c.Rotate = func(ctx context.Context) error {
+		if err := rotate(ctx); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(c.SlowLog, os.O_WRONLY, 0)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		if err := f.Truncate(size); err != nil {
+			return err
+		}
+		_, err = f.WriteAt([]byte("\n"), size-1)
+		return err
+	}
+	done := make(chan Result, 1)
+	c.OnComplete = func(result Result) { done <- result }
+	r, err := New(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if _, err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-done:
+		if result.Err != nil {
+			t.Fatal(result.Err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("capture timed out")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if slowBytes != size || len(names) != 5 || names[4] != "manifest.json" {
+		t.Fatalf("slow bytes = %d, upload order = %v", slowBytes, names)
+	}
+}
 func TestRotationFailureDoesNotStartWorker(t *testing.T) {
 	c := testConfig(t, "http://127.0.0.1:1")
 	c.Rotate = func(context.Context) error { return errors.New("cannot reopen") }

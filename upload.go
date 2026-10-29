@@ -73,7 +73,6 @@ func (r *Recorder) Upload(ctx context.Context, dir string) error {
 	}
 	names := make([]string, 0, len(m.Files)+1)
 	seen := make(map[string]bool)
-	var total int64
 	for _, declared := range m.Files {
 		name := declared.Name
 		if seen[name] || (!slices.Contains(artifactNames, name) && !isRawArtifact(name)) {
@@ -87,16 +86,12 @@ func (r *Recorder) Upload(ctx context.Context, dir string) error {
 		if entry != declared {
 			return errors.New("artifact checksum mismatch")
 		}
-		total += entry.Bytes
 		names = append(names, name)
 	}
 	for _, name := range artifactNames {
 		if !seen[name] {
 			return errors.New("missing required artifact")
 		}
-	}
-	if total > maxCaptureBytes {
-		return errors.New("capture exceeds 512 MiB")
 	}
 	for _, name := range append(names, "manifest.json") {
 		target := strings.TrimRight(r.config.Endpoint, "/") + "/api/captures/" + url.PathEscape(m.CaptureID) + "/" + url.PathEscape(m.Host) + "/" + name
