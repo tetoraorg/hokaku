@@ -148,7 +148,7 @@ if id, err := recorder.Start(); err != nil {
 | `Duration`    | `time.Duration`               | `0`なら`60 * time.Second`           | ログ切り替えとfgprof開始後の計測時間。`2 * Interval`以上、`120 * time.Second`以下にします。送信時間は含みません。                                                                                                            |
 | `Interval`    | `time.Duration`               | `0`なら`time.Second`                | ホストのCPU・メモリを採る間隔。`100 * time.Millisecond`以上、`Duration / 2`以下にします。fgprofのサンプリング間隔は変更しません。                                                                                            |
 | `OnComplete`  | `func(hokaku.Result)`        | `nil`（通知なし）                   | 計測・送信処理が終了したときにワーカーから呼ばれます。`Result`の`ID`・`Directory`・`Err`で保存先と成否を確認できます。`Start`が同期的に返すエラーや、手動の`Upload`では呼ばれません。この中から`Close`を呼ばないでください。 |
-| `HTTPClient`  | `*http.Client`                | `nil`（timeout 60秒のclientを作成） | 送信用client。指定するとコピーして使い、`Timeout == 0`なら60秒を設定します。`CheckRedirect`は指定内容にかかわらずredirect拒否へ置き換えます。                                                                                |
+| `HTTPClient`  | `*http.Client`                | `nil`（通信全体の時間制限なし） | 送信用client。指定するとコピーし、`Timeout`をそのまま使います。`0`は時間制限なしです。`CheckRedirect`は指定内容にかかわらずredirect拒否へ置き換えます。                                                                                |
 
 必須項目の不足、URL・名前・計測時間の制約違反は`New`でエラーになります。ログの存在や権限、保存先への書き込み、ローテーションコマンドの実行可否は`Start`以降に確認されます。`Duration`と`Interval`は、`0`を既定値へ置き換えた後の組み合わせで検証されます。
 
@@ -176,13 +176,32 @@ if id, err := recorder.Start(); err != nil {
 | `fgprof.pprof`  | このGoプロセスの待ち時間を含むprofile                |
 | `manifest.json` | 環境、ホスト、開始終了時刻、ファイルサイズとSHA-256  |
 
-送信先は`PUT /api/captures/<capture ID>/<host>/<file>`です。Bearer tokenで認証し、manifestは最後に送ります。中央はファイルのサイズ・SHA-256・入力形式を確認し、共通のファイル解析処理でHTTP/SQL/CPU/メモリ/profileを解析します。profile変換失敗などは原本を残して部分取得と診断を表示します。推定遷移は中央設定のセッションCookie名を使い、NGINXログにCookie・User-Agentがある場合に解析します。到着済みホストの結果を1つのベンチとして一覧へ登録し、fgprofもProfile画面で表示します。CPU pprofのCPU時間と混同しないよう、fgprofには待ち時間を含むことを表示します。取得済みprofileは`go tool pprof -http=127.0.0.1:6061 fgprof.pprof`で解析できます。
+32 MiB以下のファイルとmanifestの送信先は`PUT /api/captures/<capture ID>/<host>/<file>`です。32 MiBを超えるファイルは下記の分割送信を使います。Bearer tokenで認証し、manifestは最後に送ります。中央はファイルのサイズ・SHA-256・入力形式を確認し、共通のファイル解析処理でHTTP/SQL/CPU/メモリ/profileを解析します。profile変換失敗などは原本を残して部分取得と診断を表示します。推定遷移は中央設定のセッションCookie名を使い、NGINXログにCookie・User-Agentがある場合に解析します。到着済みホストの結果を1つのベンチとして一覧へ登録し、fgprofもProfile画面で表示します。CPU pprofのCPU時間と混同しないよう、fgprofには待ち時間を含むことを表示します。取得済みprofileは`go tool pprof -http=127.0.0.1:6061 fgprof.pprof`で解析できます。
 
 HTTPSまたはloopbackへのSSHトンネルを使います。HTTPの外部アドレスやredirectへの送信は拒否します。ネットワークエラーと5xxは最大3回試行し、4xxはその場で失敗します。ローカルファイルは成功後も自動削除しません。送信が失敗した完了記録は、同じRecorderの`Upload(ctx, directory)`で再送できます。再送先のdirectoryは`OutputDir`直下の完了captureに限定し、ディレクトリ・manifest・artifactのsymlinkは拒否します。正常な再送は二重計数しません。
 
-hokaku側にはファイル・ホスト単位の容量上限はありません。受信側の `KOSAKANA_CAPTURE_MAX_FILE_BYTES`・`KOSAKANA_CAPTURE_MAX_HOST_BYTES`・`KOSAKANA_CAPTURE_MAX_BYTES` とリバースプロキシのリクエストサイズ上限は別に適用されます。送信サイズ以上に設定してください。大きなログはローカルと受信先のディスク容量を消費します。生ログは24時間で自動削除されません。必要なprofileを退避したうえで、中央アプリを停止して保存先を整理してください。再開時に容量を数え直します。DBの計測値は従来どおり24時間保持です。
+hokaku側にはファイル・ホスト単位の容量上限はありません。受信側の `KOSAKANA_CAPTURE_MAX_FILE_BYTES`・`KOSAKANA_CAPTURE_MAX_HOST_BYTES`・`KOSAKANA_CAPTURE_MAX_BYTES` とリバースプロキシのリクエストサイズ上限は別に適用されます。受信側のファイル上限はファイル全体以上、プロキシのリクエスト上限は32 MiB以上に設定してください。大きなログはローカルと受信先のディスク容量を消費します。生ログは24時間で自動削除されません。必要なprofileを退避したうえで、中央アプリを停止して保存先を整理してください。再開時に容量を数え直します。DBの計測値は従来どおり24時間保持です。
 
 CPU使用率は累積秒の差分から計算し、初回・カウンターリセット・長い欠測区間は欠測にします。メモリ使用率は`1 - available / total`です。SQLはslow logの`SET timestamp`（欠けている場合は`# Time:`）、HTTPはJSONの`timestamp`を使い、回収時刻へ置き換えません。
+
+## 大容量ファイルの分割送信（chunks-v1）
+
+先にkosakanaを分割受信対応版へ更新してください。旧サーバーへ大きなファイルを送る場合はエラーになり、一括送信へのfallbackはしません。小さなファイルとmanifestは従来のAPIを使います。
+
+32 MiBを超える各artifactは、32 MiBずつ独立した `PUT /api/captures/<capture ID>/<host>/<file>.chunks` で順番に送ります。最終チャンクだけ32 MiB未満になる場合があります。これはHTTP `Transfer-Encoding: chunked` ではなく、別々のHTTPリクエストです。1 GiBは32リクエストに分割されます。ファイル全体やチャンク全体をメモリに読み込まず、ファイルの範囲をストリーム送信します。
+
+各リクエストはBearer認証に加え、次のヘッダーを送ります。
+
+- `Content-Length`: このリクエストのバイト数。
+- `Content-Range: bytes <開始>-<終了>/<全体バイト数>`: 終了位置はinclusive。
+- `X-Kosakana-File-SHA256`: manifestに記載したファイル全体のSHA-256。
+- `X-Kosakana-Chunk-SHA256`: このチャンクのSHA-256。
+
+受信側はチャンクを検証・永続化した後、200または201と `X-Kosakana-Upload-Protocol: chunks-v1`、`X-Kosakana-Upload-Offset: <永続化済みの連続バイト数>` を返します。最終チャンクではファイル全体のサイズとSHA-256も検証します。hokakuはこの応答を検証し、次の位置から送信します。切断後に `Upload(ctx, directory)` を呼ぶと最初のチャンクで既存prefixを照合し、受信済み範囲を飛ばして再開できます。同じチャンクの再送は重複保存されません。manifestは全artifactの完了後に従来どおり最後に送ります。
+
+通信エラー・5xxは同じチャンクを最大3回試行します（待機1秒、2秒）。4xxや不正な受信確認はその場で終了します。送信元のファイルを変更した場合は同じcapture IDで再利用しないでください。
+
+hokakuは通信全体・1リクエストの60秒制限を設けません。`HTTPClient.Timeout`を指定した場合はその値を尊重し、`Upload`のcontextキャンセル、計測から開始した送信の`Close`、単体recorderのSIGINT/SIGTERMでも中断できます。必要なら呼び出し側で期限を設定してください。帯域・総送信量の制限はありません。受信側の容量設定とプロキシのタイムアウト・リクエスト上限は引き続き適用されます。
 
 ## 複数サーバーと計測区間
 
@@ -195,6 +214,14 @@ CPU使用率は累積秒の差分から計算し、初回・カウンターリ�
 ```sh
 go test -race ./...
 go vet ./...
+```
+
+1 GiBの実バイト送信・ストリーム解析・再送を確認するときは、隔離したkosakanaへ次を実行できます。ローカルと受信先にそれぞれ1 GiB以上の空きが必要です。合成slow logは完全なSQLレコードと末尾改行で指定サイズに揃え、期待するSQL件数・合計秒数をJSONへ出力します。送信と同じcaptureの再送を両方実行し、原本は残します。
+
+```sh
+KOSAKANA_ACCESS_KEY='隔離環境のingestキー' go run ./cmd/large-smoke \
+  --endpoint http://127.0.0.1:3000 --out /tmp/hokaku-large-new \
+  --capture-id large-check-001 --bytes 1073741824
 ```
 
 中央も含む結合検証は、別のkosakanaリポジトリで`npm run record:check`を実行します。3ホスト分の合成HTTP/SQLログ、実gopsutil、実fgprofを使って、送信・再送・集計を確認します。実ISUCONベンチの得点や計測負荷はこのテストでは検証しません。

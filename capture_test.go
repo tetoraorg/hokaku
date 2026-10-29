@@ -138,8 +138,9 @@ func TestCaptureUploadsLogLargerThan128MiB(t *testing.T) {
 		defer mu.Unlock()
 		name := filepath.Base(req.URL.Path)
 		names = append(names, name)
-		if name == "slow.log" {
-			slowBytes = n
+		if name == "slow.log.chunks" {
+			slowBytes += n
+			acknowledge(w, slowBytes)
 		}
 	}))
 	defer server.Close()
@@ -180,7 +181,7 @@ func TestCaptureUploadsLogLargerThan128MiB(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if slowBytes != size || len(names) != 5 || names[4] != "manifest.json" {
+	if slowBytes != size || len(names) != 9 || names[8] != "manifest.json" {
 		t.Fatalf("slow bytes = %d, upload order = %v", slowBytes, names)
 	}
 }

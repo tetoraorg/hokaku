@@ -99,13 +99,12 @@ func New(c Config) (*Recorder, error) {
 	if c.Interval < 100*time.Millisecond || c.Duration < 2*c.Interval || c.Duration > 2*time.Minute {
 		return nil, errors.New("duration must be 2 intervals to 120 seconds; interval at least 100ms")
 	}
-	client := &http.Client{Timeout: 60 * time.Second}
+	// Upload duration is unbounded by default; callers can set HTTPClient.Timeout
+	// or cancel the upload context. Large captures must not inherit a 60s deadline.
+	client := &http.Client{}
 	if c.HTTPClient != nil {
 		copy := *c.HTTPClient
 		client = &copy
-		if client.Timeout == 0 {
-			client.Timeout = 60 * time.Second
-		}
 	}
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return errors.New("upload redirects are disabled") }
 	return &Recorder{config: c, client: client}, nil

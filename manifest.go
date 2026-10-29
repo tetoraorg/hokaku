@@ -1,6 +1,7 @@
 package hokaku
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -49,7 +50,23 @@ type manifest struct {
 	Files       []fileEntry `json:"files"`
 }
 
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
+}
+
 func describe(path, name string) (fileEntry, error) {
+	return describeContext(context.Background(), path, name)
+}
+
+func describeContext(ctx context.Context, path, name string) (fileEntry, error) {
 	before, err := os.Lstat(path)
 	if err != nil {
 		return fileEntry{}, err
@@ -70,7 +87,7 @@ func describe(path, name string) (fileEntry, error) {
 		return fileEntry{}, errors.New("invalid artifact")
 	}
 	hash := sha256.New()
-	n, err := io.Copy(hash, f)
+	n, err := io.Copy(hash, contextReader{ctx, f})
 	if err != nil {
 		return fileEntry{}, err
 	}
