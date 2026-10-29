@@ -23,6 +23,7 @@ import (
 	capturelogs "github.com/tetoraorg/hokaku/internal/logs"
 	capturemysql "github.com/tetoraorg/hokaku/internal/mysql"
 	capturenginx "github.com/tetoraorg/hokaku/internal/nginx"
+	captureprocess "github.com/tetoraorg/hokaku/internal/process"
 )
 
 var ErrBusy = errors.New("a capture is already running")
@@ -36,6 +37,10 @@ type Config struct {
 	AccessLog, SlowLog                            string // Empty paths produce empty artifacts.
 	// RawLogs maps a label to a file path. Only bytes appended after Start opens
 	// the file are captured, without parsing or requiring a final newline.
+	// DisableProcessMetrics disables the optional Linux process scan.
+	DisableProcessMetrics bool
+	// ProcessInterval defaults to 1s and must be between 1s and 10s. Scans run on host ticks.
+	ProcessInterval    time.Duration
 	RawLogs            map[string]string
 	Rotate             func(context.Context) error
 	Duration, Interval time.Duration // Defaults: 60 seconds and 1 second.
@@ -80,6 +85,12 @@ func New(c Config) (*Recorder, error) {
 	}
 	if c.Duration == 0 {
 		c.Duration = 60 * time.Second
+	}
+	if c.ProcessInterval == 0 {
+		c.ProcessInterval = time.Second
+	}
+	if c.ProcessInterval < time.Second || c.ProcessInterval > 10*time.Second {
+		return nil, errors.New("process interval must be between 1s and 10s")
 	}
 	if c.Interval == 0 {
 		c.Interval = time.Second
@@ -203,10 +214,19 @@ func (r *Recorder) record(ctx context.Context, dir, id string, started time.Time
 	}
 	defer func() { result = errors.Join(result, metrics.close()) }()
 	readers := defaultHostReaders(ctx)
+	nextProcess := started
 	sample := func() error {
 		row, err := readHostSample(ctx, r.config.Environment, r.config.Host, readers)
 		if err != nil {
 			return err
+		}
+		if !r.config.DisableProcessMetrics && !time.Now().Before(nextProcess) {
+			row.Processes = captureprocess.Read(ctx)
+			// Advance the schedule, not the last observed tick: jitter must not
+			// accidentally turn a 1s process interval into a 2s interval.
+			for !nextProcess.After(time.Now()) {
+				nextProcess = nextProcess.Add(r.config.ProcessInterval)
+			}
 		}
 		if err = logs.Check(); err != nil {
 			return err

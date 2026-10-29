@@ -118,3 +118,23 @@ func TestHostSampleIncludesCPUModel(t *testing.T) {
 		t.Fatalf("missing CPU model: %s", data)
 	}
 }
+
+func TestProcessWireFixture(t *testing.T) {
+	data, err := os.ReadFile("testdata/process-host.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
+		var sample hostSample
+		if err := json.Unmarshal([]byte(line), &sample); err != nil {
+			t.Fatal(err)
+		}
+		if sample.Processes == nil || len(sample.Processes.Items) != 4 {
+			t.Fatal("missing processes")
+		}
+		encoded, err := json.Marshal(sample)
+		if err != nil || string(encoded) != line {
+			t.Fatalf("wire fixture mismatch: %s %v", encoded, err)
+		}
+	}
+}

@@ -38,6 +38,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, output 
 	flags.StringVar(&config.SlowLog, "slow-log", "", "MySQL slow log path; empty disables collection")
 	flags.DurationVar(&config.Duration, "duration", 60*time.Second, "recording duration")
 	flags.DurationVar(&config.Interval, "interval", time.Second, "host sampling interval")
+	flags.BoolVar(&config.DisableProcessMetrics, "disable-process-metrics", false, "disable Linux process CPU/RSS collection")
+	flags.DurationVar(&config.ProcessInterval, "process-interval", time.Second, "process sampling interval (at least 1s)")
 	flags.StringVar(&id, "capture-id", "", "shared capture ID; empty generates an ID")
 	flags.Usage = func() {
 		fmt.Fprintln(output, "Usage: recorder [flags] [-- rotation-command args...]")
