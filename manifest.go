@@ -40,13 +40,14 @@ type fileEntry struct {
 	SHA256 string `json:"sha256"`
 }
 type manifest struct {
-	Version     int         `json:"version"`
-	CaptureID   string      `json:"capture_id"`
-	Environment string      `json:"environment"`
-	Host        string      `json:"host"`
-	StartedAt   int64       `json:"started_at"`
-	EndedAt     int64       `json:"ended_at"`
-	Files       []fileEntry `json:"files"`
+	Version     int          `json:"version"`
+	CaptureID   string       `json:"capture_id"`
+	Environment string       `json:"environment"`
+	Host        string       `json:"host"`
+	StartedAt   int64        `json:"started_at"`
+	EndedAt     int64        `json:"ended_at"`
+	Files       []fileEntry  `json:"files"`
+	Git         *gitMetadata `json:"git,omitempty"`
 }
 
 func describe(path, name string) (fileEntry, error) {
@@ -80,7 +81,7 @@ func describe(path, name string) (fileEntry, error) {
 // writeManifest hashes the complete artifact set and publishes only a fully
 // synced completion marker. A crash may leave a pending file, never a partial
 // manifest.json.
-func writeManifest(dir, id, environment, host string, started time.Time, endedAt int64, rawNames ...string) error {
+func writeManifest(dir, id, environment, host string, started time.Time, endedAt int64, git *gitMetadata, rawNames ...string) error {
 	m := manifest{
 		Version:     1,
 		CaptureID:   id,
@@ -88,6 +89,7 @@ func writeManifest(dir, id, environment, host string, started time.Time, endedAt
 		Host:        host,
 		StartedAt:   started.UnixMilli(),
 		EndedAt:     endedAt,
+		Git:         git,
 	}
 	for _, name := range append(append([]string{}, artifactNames...), rawNames...) {
 		entry, err := describe(filepath.Join(dir, name), name)

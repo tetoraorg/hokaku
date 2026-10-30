@@ -157,7 +157,7 @@ func TestManifestAcceptsMoreThan512MiB(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := writeManifest(dir, "large", "test", "app-1", time.Now(), time.Now().UnixMilli()); err != nil {
+	if err := writeManifest(dir, "large", "test", "app-1", time.Now(), time.Now().UnixMilli(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(filepath.Join(dir, "manifest.json")); err != nil {
@@ -166,7 +166,7 @@ func TestManifestAcceptsMoreThan512MiB(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "raw-extra.log"), []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeManifest(dir, "large", "test", "app-1", time.Now(), time.Now().UnixMilli(), "raw-extra.log"); err != nil {
+	if err := writeManifest(dir, "large", "test", "app-1", time.Now(), time.Now().UnixMilli(), nil, "raw-extra.log"); err != nil {
 		t.Fatalf("writeManifest() failed: %v", err)
 	}
 }

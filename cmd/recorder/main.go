@@ -34,6 +34,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, output 
 	flags.StringVar(&config.Environment, "environment", "", "environment name (required)")
 	flags.StringVar(&config.Host, "host", "", "host name (required)")
 	flags.StringVar(&config.OutputDir, "output-dir", "", "local capture directory (required)")
+	flags.StringVar(&config.GitDir, "git-dir", "", "application Git checkout; empty disables commit collection")
 	flags.StringVar(&config.AccessLog, "access-log", "", "NGINX JSON log path; empty disables collection")
 	flags.StringVar(&config.SlowLog, "slow-log", "", "MySQL slow log path; empty disables collection")
 	flags.DurationVar(&config.Duration, "duration", 60*time.Second, "recording duration")
