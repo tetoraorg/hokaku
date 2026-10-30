@@ -31,6 +31,7 @@ export KOSAKANA_ACCESS_KEY='生成したingest権限のキー本体'
   --environment practice-1 \
   --host app-1 \
   --output-dir /home/isucon/kosakana-captures \
+  --git-dir /home/isucon/webapp \
   --access-log /var/log/nginx/kosakana-access.log \
   --slow-log /var/log/mysql/kosakana-slow.log \
   --duration 60s \
@@ -46,6 +47,7 @@ export KOSAKANA_ACCESS_KEY='生成したingest権限のキー本体'
 | `--environment` | `Environment`       | なし（必須）                                  |
 | `--host`        | `Host`              | なし（必須）                                  |
 | `--output-dir`  | `OutputDir`         | なし（必須）                                  |
+| `--git-dir`     | `GitDir`            | 空（commit 情報を収集しない）                  |
 | `--access-log`  | `AccessLog`         | 空（収集しない）                              |
 | `--slow-log`    | `SlowLog`           | 空（収集しない）                              |
 | `--duration`    | `Duration`          | `60s`                                         |
@@ -95,6 +97,7 @@ recorder, err := hokaku.New(hokaku.Config{
     Environment: "practice-1",
     Host:        "app-1",
     OutputDir:   "/home/isucon/kosakana-captures",
+    GitDir:      "/home/isucon/webapp",
     AccessLog:   "/var/log/nginx/kosakana-access.log",
     SlowLog:     "/var/log/mysql/kosakana-slow.log",
     Rotate: hokaku.CommandRotator(
@@ -127,7 +130,13 @@ if id, err := recorder.Start(); err != nil {
 }
 ```
 
-`Start`はログ切り替えとfgprof開始までを同期的に行います。ログ切り替えのタイムアウトは10秒です。**60秒の計測やファイル送信が終わるのをinitializeで待つ必要はありません**。リクエストcontextの終了で計測が止まることもありません。
+`Start`はGit情報の取得（指定時）、ログ切り替えとfgprof開始までを同期的に行います。Git情報の取得とログ切り替えのタイムアウトはそれぞれ10秒です。**60秒の計測やファイル送信が終わるのをinitializeで待つ必要はありません**。リクエストcontextの終了で計測が止まることもありません。
+
+`GitDir` にアプリの Git checkout を指定すると、capture 開始時の HEAD の SHA・commit 件名・未コミット変更の有無を `manifest.json` の `git` に同梱します。実行環境に `git` と HEAD のある checkout が必要です。Git 情報の取得に失敗すると、ログ切り替え前に `Start` がエラーを返します。空なら収集しません。
+
+ステージ済み・未ステージ・未追跡ファイルがある場合は `slog.Warn` で warning を出し、送信する件名を `[+]<件名>` にします（例：`[+]feat: add index`）。Git の ignore 対象は含めません。差分やファイル内容は送信しません。checkout が実行中バイナリと対応するよう、呼び出し側で管理してください。計測中の変更は反映せず、再送でも開始時の情報を維持します。出力先やログは checkout の外に置くか ignore 対象にしてください。
+
+先に kosakana を Git 情報の受信に対応した版へ更新してください。ベンチ一覧・詳細に件名と commit リンクを表示します。複数ホストの SHA が異なる場合は、kosakana に `⚠ Multiple commits` と各 SHA を表示します。
 
 同じプロセスで計測・送信中に再度Startすると`ErrBusy`です。上書きや多重ローテーションは行いません。`Close`は計測・送信を中断し、終了を待ちます。途中終了した計測にはmanifestを作らず、送信しません。
 
@@ -174,7 +183,7 @@ if id, err := recorder.Start(); err != nil {
 | `access.log`    | 切り替え後のNGINX JSONログ                           |
 | `slow.log`      | 切り替え後のMySQL FILE slow log                      |
 | `fgprof.pprof`  | このGoプロセスの待ち時間を含むprofile                |
-| `manifest.json` | 環境、ホスト、開始終了時刻、ファイルサイズとSHA-256  |
+| `manifest.json` | 環境、ホスト、開始終了時刻、ファイルサイズとSHA-256、任意のGit情報 |
 
 送信先は`PUT /api/captures/<capture ID>/<host>/<file>`です。Bearer tokenで認証し、manifestは最後に送ります。中央はファイルのサイズ・SHA-256・入力形式を確認し、共通のファイル解析処理でHTTP/SQL/CPU/メモリ/profileを解析します。profile変換失敗などは原本を残して部分取得と診断を表示します。推定遷移は中央設定のセッションCookie名を使い、NGINXログにCookie・User-Agentがある場合に解析します。到着済みホストの結果を1つのベンチとして一覧へ登録し、fgprofもProfile画面で表示します。CPU pprofのCPU時間と混同しないよう、fgprofには待ち時間を含むことを表示します。取得済みprofileは`go tool pprof -http=127.0.0.1:6061 fgprof.pprof`で解析できます。
 

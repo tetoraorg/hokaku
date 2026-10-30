@@ -36,6 +36,8 @@ var validName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 type Config struct {
 	Endpoint, Token, Environment, Host, OutputDir string
 	AccessLog, SlowLog                            string // Empty paths produce empty artifacts.
+	// GitDir enables commit collection from this checkout at each capture start.
+	GitDir string
 	// RawLogs maps a label to a file path. Only bytes appended after Start opens
 	// the file are captured, without parsing or requiring a final newline.
 	// DisableProcessMetrics disables the optional Linux process scan.
@@ -146,6 +148,10 @@ func (r *Recorder) start(id string) (string, error) {
 			profileActive.Store(false)
 		}
 	}()
+	git, err := readGitMetadata(r.config.GitDir)
+	if err != nil {
+		return "", err
+	}
 	dir := filepath.Join(r.config.OutputDir, id)
 	if err := os.MkdirAll(r.config.OutputDir, 0700); err != nil {
 		return "", err
@@ -155,7 +161,7 @@ func (r *Recorder) start(id string) (string, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	rotateCtx, rotateCancel := context.WithTimeout(ctx, 10*time.Second)
-	err := r.config.Rotate(rotateCtx)
+	err = r.config.Rotate(rotateCtx)
 	rotateCancel()
 	if err != nil {
 		cancel()
@@ -181,7 +187,7 @@ func (r *Recorder) start(id string) (string, error) {
 	ready = true
 	r.wg.Go(func() {
 		defer func() { r.mu.Lock(); r.cancel = nil; r.mu.Unlock(); cancel() }()
-		err := r.record(ctx, dir, id, started, logSnapshot, profile)
+		err := r.record(ctx, dir, id, started, logSnapshot, profile, git)
 		profileActive.Store(false)
 		if err == nil {
 			err = r.Upload(ctx, dir)
@@ -205,7 +211,7 @@ func (r *Recorder) Close() {
 	r.wg.Wait()
 }
 
-func (r *Recorder) record(ctx context.Context, dir, id string, started time.Time, logs *capturelogs.Snapshot, profile *capturefgprof.Session) (result error) {
+func (r *Recorder) record(ctx context.Context, dir, id string, started time.Time, logs *capturelogs.Snapshot, profile *capturefgprof.Session, git *gitMetadata) (result error) {
 	defer logs.Close()
 	defer func() { result = errors.Join(result, profile.StopAndClose()) }()
 	metrics, err := openHostSampleWriter(dir)
@@ -262,7 +268,7 @@ func (r *Recorder) record(ctx context.Context, dir, id string, started time.Time
 			if err = logs.CopyTo(dir, math.MaxInt64); err != nil {
 				return err
 			}
-			return writeManifest(dir, id, r.config.Environment, r.config.Host, started, ended, r.rawArtifactNames()...)
+			return writeManifest(dir, id, r.config.Environment, r.config.Host, started, ended, git, r.rawArtifactNames()...)
 		}
 	}
 }
