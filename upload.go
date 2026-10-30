@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // Upload retries a completed local capture. Original files are never removed.
@@ -101,14 +103,47 @@ func (r *Recorder) Upload(ctx context.Context, dir string) error {
 			if err != nil {
 				return err
 			}
-			req, err := http.NewRequestWithContext(ctx, http.MethodPut, target, f)
+			var body io.Reader = f
+			var compressed *io.PipeReader
+			var compressionDone chan error
+			if r.config.CompressUploads && name != "manifest.json" {
+				var writer *io.PipeWriter
+				compressed, writer = io.Pipe()
+				compressionDone = make(chan error, 1)
+				go func() {
+					encoder, err := zstd.NewWriter(writer, zstd.WithEncoderConcurrency(1), zstd.WithEncoderLevel(zstd.SpeedFastest))
+					if err == nil {
+						_, err = io.Copy(encoder, f)
+						err = errors.Join(err, encoder.Close())
+					}
+					_ = writer.CloseWithError(err)
+					compressionDone <- err
+				}()
+				body = compressed
+			}
+			req, err := http.NewRequestWithContext(ctx, http.MethodPut, target, body)
 			if err != nil {
+				if compressed != nil {
+					_ = compressed.Close()
+					<-compressionDone
+				}
 				f.Close()
 				return err
 			}
 			req.Header.Set("Authorization", "Bearer "+r.config.Token)
 			req.Header.Set("Content-Type", "application/octet-stream")
+			if compressed != nil {
+				req.Header.Set("Content-Encoding", "zstd")
+			}
 			response, err := r.client.Do(req)
+			if compressed != nil {
+				_ = compressed.Close()
+				compressionErr := <-compressionDone
+				if err == nil && response.StatusCode >= 200 && response.StatusCode < 300 && compressionErr != nil {
+					_ = response.Body.Close()
+					err = compressionErr
+				}
+			}
 			_ = f.Close()
 			if err == nil {
 				_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))

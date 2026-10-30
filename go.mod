@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/felixge/fgprof v0.9.5
 	github.com/google/pprof v0.0.0-20240227163752-401108e1b7e7
+	github.com/klauspost/compress v1.18.2
 	github.com/shirou/gopsutil/v4 v4.26.9
 	github.com/tklauser/go-sysconf v0.4.0
 )

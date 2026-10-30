@@ -18,6 +18,7 @@ func main() {
 	out := flag.String("out", "", "new private test directory")
 	host := flag.String("host", "app-1", "test host name")
 	captureID := flag.String("capture-id", "", "shared capture identifier")
+	compressUploads := flag.Bool("compress-uploads", false, "send artifacts with zstd")
 	flag.Parse()
 	if *out == "" {
 		log.Fatal("--out required")
@@ -28,7 +29,7 @@ func main() {
 	access := filepath.Join(*out, "nginx.log")
 	slow := filepath.Join(*out, "mysql.log")
 	done := make(chan hokaku.Result, 1)
-	recorder, err := hokaku.New(hokaku.Config{Endpoint: *endpoint, Token: os.Getenv("KOSAKANA_ACCESS_KEY"), Environment: "record-check", Host: *host, OutputDir: filepath.Join(*out, "captures"), AccessLog: access, SlowLog: slow, Duration: 2 * time.Second, Interval: 200 * time.Millisecond, OnComplete: func(r hokaku.Result) { done <- r }, Rotate: func(context.Context) error {
+	recorder, err := hokaku.New(hokaku.Config{Endpoint: *endpoint, Token: os.Getenv("KOSAKANA_ACCESS_KEY"), Environment: "record-check", Host: *host, OutputDir: filepath.Join(*out, "captures"), AccessLog: access, SlowLog: slow, Duration: 2 * time.Second, Interval: 200 * time.Millisecond, CompressUploads: *compressUploads, OnComplete: func(r hokaku.Result) { done <- r }, Rotate: func(context.Context) error {
 		if err := os.WriteFile(access, nil, 0600); err != nil {
 			return err
 		}

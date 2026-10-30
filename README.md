@@ -158,6 +158,7 @@ if id, err := recorder.Start(); err != nil {
 | `Interval`    | `time.Duration`               | `0`なら`time.Second`                | ホストのCPU・メモリを採る間隔。`100 * time.Millisecond`以上、`Duration / 2`以下にします。fgprofのサンプリング間隔は変更しません。                                                                                            |
 | `OnComplete`  | `func(hokaku.Result)`        | `nil`（通知なし）                   | 計測・送信処理が終了したときにワーカーから呼ばれます。`Result`の`ID`・`Directory`・`Err`で保存先と成否を確認できます。`Start`が同期的に返すエラーや、手動の`Upload`では呼ばれません。この中から`Close`を呼ばないでください。 |
 | `HTTPClient`  | `*http.Client`                | `nil`（送信全体の時間制限なし） | 送信用client。指定するとコピーして使い、`Timeout == 0`は時間制限なし、正の値は指定した制限を維持します。接続確立のタイムアウトと`Close`・`Upload`のcontextによる中断は有効です。`CheckRedirect`は指定内容にかかわらずredirect拒否へ置き換えます。                                                                                |
+| `CompressUploads` | `bool` | `false` | `true`でartifactをZstandard圧縮して送信します。対応するKosakanaを先に導入してください。 |
 
 必須項目の不足、URL・名前・計測時間の制約違反は`New`でエラーになります。ログの存在や権限、保存先への書き込み、ローテーションコマンドの実行可否は`Start`以降に確認されます。`Duration`と`Interval`は、`0`を既定値へ置き換えた後の組み合わせで検証されます。
 
@@ -186,6 +187,8 @@ if id, err := recorder.Start(); err != nil {
 | `manifest.json` | 環境、ホスト、開始終了時刻、ファイルサイズとSHA-256、任意のGit情報 |
 
 送信先は`PUT /api/captures/<capture ID>/<host>/<file>`です。Bearer tokenで認証し、manifestは最後に送ります。中央はファイルのサイズ・SHA-256・入力形式を確認し、共通のファイル解析処理でHTTP/SQL/CPU/メモリ/profileを解析します。profile変換失敗などは原本を残して部分取得と診断を表示します。推定遷移は中央設定のセッションCookie名を使い、NGINXログにCookie・User-Agentがある場合に解析します。到着済みホストの結果を1つのベンチとして一覧へ登録し、fgprofもProfile画面で表示します。CPU pprofのCPU時間と混同しないよう、fgprofには待ち時間を含むことを表示します。取得済みprofileは`go tool pprof -http=127.0.0.1:6061 fgprof.pprof`で解析できます。
+
+対応するKosakanaを先に導入した後、`Config.CompressUploads: true`（単体recorderは`--compress-uploads`）でartifactの転送をZstandard圧縮できます。manifestとローカルの原本は変わらず、SHA-256と保存容量の上限は展開後のサイズを基準にします。旧サーバーは圧縮送信を拒否するため、設定を有効にする前に受信側を更新してください。圧縮には送信元のCPUを使い、データによっては転送量が増える場合もあります。
 
 HTTPSまたはloopbackへのSSHトンネルを使います。HTTPの外部アドレスやredirectへの送信は拒否します。ネットワークエラーと5xxは最大3回試行し、4xxはその場で失敗します。ローカルファイルは成功後も自動削除しません。送信が失敗した完了記録は、同じRecorderの`Upload(ctx, directory)`で再送できます。再送先のdirectoryは`OutputDir`直下の完了captureに限定し、ディレクトリ・manifest・artifactのsymlinkは拒否します。正常な再送は二重計数しません。
 
