@@ -49,6 +49,9 @@ type Config struct {
 	Duration, Interval time.Duration // Defaults: 60 seconds and 1 second.
 	OnComplete         func(Result)  // Called by the worker after recording/upload completes.
 	HTTPClient         *http.Client
+	// CompressUploads enables Zstandard for artifact uploads. The receiver must
+	// support Content-Encoding: zstd. Manifests remain uncompressed.
+	CompressUploads bool
 }
 type Result struct {
 	ID, Directory string

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -421,37 +422,42 @@ func TestUploadTimeoutIsOptIn(t *testing.T) {
 }
 
 func TestUnlimitedUploadStillHonorsCancellation(t *testing.T) {
-	entered := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		_, _ = io.Copy(io.Discard, req.Body)
-		close(entered)
-		<-req.Context().Done()
-	}))
-	defer server.Close()
-	c := testConfig(t, server.URL)
-	dir := filepath.Join(c.OutputDir, "cancel-upload")
-	fakeCompleted(t, dir)
-	r, err := New(c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close()
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- r.Upload(ctx, dir) }()
-	select {
-	case <-entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("upload did not start")
-	}
-	cancel()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("upload cancellation: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("upload ignored cancellation")
+	for _, compressed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("compressed=%t", compressed), func(t *testing.T) {
+			entered := make(chan struct{})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				_, _ = io.Copy(io.Discard, req.Body)
+				close(entered)
+				<-req.Context().Done()
+			}))
+			defer server.Close()
+			c := testConfig(t, server.URL)
+			c.CompressUploads = compressed
+			dir := filepath.Join(c.OutputDir, "cancel-upload")
+			fakeCompleted(t, dir)
+			r, err := New(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- r.Upload(ctx, dir) }()
+			select {
+			case <-entered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("upload did not start")
+			}
+			cancel()
+			select {
+			case err := <-done:
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("upload cancellation: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("upload ignored cancellation")
+			}
+		})
 	}
 }

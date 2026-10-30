@@ -1,13 +1,90 @@
 package hokaku
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 )
+
+func TestCompressedUploadAndRetry(t *testing.T) {
+	var names []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		name := filepath.Base(req.URL.Path)
+		names = append(names, name)
+		var reader io.Reader = req.Body
+		if name != "manifest.json" {
+			if req.Header.Get("Content-Encoding") != "zstd" {
+				t.Error("missing zstd encoding")
+			}
+			decoder, err := zstd.NewReader(req.Body)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer decoder.Close()
+			reader = decoder
+		} else if req.Header.Get("Content-Encoding") != "" {
+			t.Error("compressed manifest")
+		}
+		data, err := io.ReadAll(reader)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if name != "manifest.json" && !bytes.Equal(data, []byte("private content\n")) {
+			t.Errorf("unexpected %s bytes", name)
+		}
+		if len(names) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	c := testConfig(t, server.URL)
+	c.CompressUploads = true
+	dir := filepath.Join(c.OutputDir, "capture-1")
+	fakeCompleted(t, dir)
+	r, err := New(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	for range 2 {
+		if err := r.Upload(t.Context(), dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(names) != 11 || names[0] != names[1] || names[5] != "manifest.json" || names[10] != "manifest.json" {
+		t.Fatalf("upload order: %v", names)
+	}
+}
+
+func TestCompressedUploadEarlyRejection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnsupportedMediaType) }))
+	defer server.Close()
+	c := testConfig(t, server.URL)
+	c.CompressUploads = true
+	dir := filepath.Join(c.OutputDir, "capture-1")
+	fakeCompleted(t, dir)
+	r, err := New(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if err := r.Upload(t.Context(), dir); err == nil || !strings.Contains(err.Error(), "HTTP 415") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
 
 func fakeCompleted(t *testing.T, dir string) {
 	t.Helper()
