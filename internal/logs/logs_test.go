@@ -116,3 +116,88 @@ func TestSnapshotRejectsAboveConfiguredLimit(t *testing.T) {
 		t.Fatal("accepted oversized log")
 	}
 }
+
+func TestRawSnapshotLimitCountsOnlyNewBytes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "source.log")
+	if err := os.WriteFile(path, []byte("old log data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := Open(Target{SourcePath: path, ArtifactName: "raw-postgresql.log", Raw: true, MaxBytes: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer snapshot.Close()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.WriteString("1234"); err != nil {
+		t.Fatal(err)
+	}
+	if err = snapshot.Check(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.WriteString("5"); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = snapshot.Check(); err == nil {
+		t.Fatal("accepted oversized raw capture")
+	}
+}
+
+func TestRawSnapshotLimitIgnoresBytesWrittenAfterFreeze(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "source.log")
+	if err := os.WriteFile(path, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := Open(Target{SourcePath: path, ArtifactName: "raw-postgresql.log", Raw: true, MaxBytes: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer snapshot.Close()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.WriteString("1234"); err != nil {
+		t.Fatal(err)
+	}
+	if err = snapshot.Freeze(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.WriteString("after window"); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = snapshot.CopyTo(dir, 4); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "raw-postgresql.log"))
+	if err != nil || string(got) != "1234" {
+		t.Fatalf("got %q, err %v", got, err)
+	}
+}
+
+func TestSnapshotCannotBeFrozenTwice(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "source.log")
+	if err := os.WriteFile(path, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := Open(Target{SourcePath: path, ArtifactName: "raw-postgresql.log", Raw: true, MaxBytes: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer snapshot.Close()
+	if err = snapshot.Freeze(); err != nil {
+		t.Fatal(err)
+	}
+	if err = snapshot.Freeze(); err == nil {
+		t.Fatal("snapshot was frozen twice")
+	}
+}

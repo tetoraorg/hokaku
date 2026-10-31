@@ -461,3 +461,40 @@ func TestUnlimitedUploadStillHonorsCancellation(t *testing.T) {
 		})
 	}
 }
+
+func TestOversizeRawLogFailsBeforeUpload(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { requests++; w.WriteHeader(http.StatusOK) }))
+	defer server.Close()
+	config := testConfig(t, server.URL)
+	path := filepath.Join(t.TempDir(), "postgres.log")
+	if err := os.WriteFile(path, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	config.RawLogs = map[string]string{"postgresql": path}
+	config.MaxRawLogBytes = 3
+	done := make(chan Result, 1)
+	config.OnComplete = func(r Result) { done <- r }
+	recorder, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer recorder.Close()
+	if _, err = recorder.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, []byte("1234"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-done:
+		if result.Err == nil || !strings.Contains(result.Err.Error(), "exceeds") {
+			t.Fatalf("result: %v", result.Err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("capture did not complete")
+	}
+	if requests != 0 {
+		t.Fatalf("oversized capture was uploaded: %d requests", requests)
+	}
+}
