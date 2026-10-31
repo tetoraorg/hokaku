@@ -12,7 +12,8 @@ import (
 type Target struct {
 	SourcePath   string
 	ArtifactName string
-	Raw          bool // Capture append-only bytes from open time, without line validation.
+	Raw          bool  // Capture append-only bytes from open time, without line validation.
+	MaxBytes     int64 // Maximum appended bytes for raw captures; zero means unlimited.
 }
 
 type fileSnapshot struct {
@@ -27,7 +28,8 @@ type fileSnapshot struct {
 
 // Snapshot owns pinned log descriptors and the bytes captured at Freeze.
 type Snapshot struct {
-	files []*fileSnapshot
+	files  []*fileSnapshot
+	frozen bool
 }
 
 func Open(targets ...Target) (*Snapshot, error) {
@@ -65,6 +67,9 @@ func (s *Snapshot) Check() error {
 		if err := file.check(); err != nil {
 			return err
 		}
+		if !s.frozen && file.target.Raw && file.target.MaxBytes > 0 && file.size-file.startSize > file.target.MaxBytes {
+			return fmt.Errorf("raw log exceeds %d bytes: %s", file.target.MaxBytes, file.target.ArtifactName)
+		}
 	}
 	return nil
 }
@@ -78,12 +83,16 @@ func (s *Snapshot) Close() {
 }
 
 func (s *Snapshot) Freeze() error {
+	if s.frozen {
+		return errors.New("log snapshot already frozen")
+	}
 	if err := s.Check(); err != nil {
 		return err
 	}
 	for _, file := range s.files {
 		file.endSize = file.size
 	}
+	s.frozen = true
 	return nil
 }
 

@@ -139,3 +139,11 @@ func TestUploadRejectsUnsafeRawManifest(t *testing.T) {
 		})
 	}
 }
+
+func TestNegativeRawLogLimitRejected(t *testing.T) {
+	c := testConfig(t, "http://127.0.0.1:1")
+	c.MaxRawLogBytes = -1
+	if _, err := New(c); err == nil {
+		t.Fatal("negative limit was accepted")
+	}
+}

@@ -43,8 +43,10 @@ type Config struct {
 	// DisableProcessMetrics disables the optional Linux process scan.
 	DisableProcessMetrics bool
 	// ProcessInterval defaults to 1s and must be between 1s and 10s. Scans run on host ticks.
-	ProcessInterval    time.Duration
-	RawLogs            map[string]string
+	ProcessInterval time.Duration
+	RawLogs         map[string]string
+	// MaxRawLogBytes limits each raw log's captured bytes. Zero means unlimited.
+	MaxRawLogBytes     int64
 	Rotate             func(context.Context) error
 	Duration, Interval time.Duration // Defaults: 60 seconds and 1 second.
 	OnComplete         func(Result)  // Called by the worker after recording/upload completes.
@@ -72,6 +74,9 @@ func New(c Config) (*Recorder, error) {
 	}
 	if len(c.RawLogs) > maxRawLogs {
 		return nil, errors.New("at most 16 raw logs are allowed")
+	}
+	if c.MaxRawLogBytes < 0 {
+		return nil, errors.New("raw log byte limit cannot be negative")
 	}
 	for name, path := range c.RawLogs {
 		if !validRawLabel.MatchString(name) || path == "" {
@@ -172,7 +177,7 @@ func (r *Recorder) start(id string) (string, error) {
 	}
 	targets := []capturelogs.Target{capturenginx.Target(r.config.AccessLog), capturemysql.Target(r.config.SlowLog)}
 	for _, name := range slices.Sorted(maps.Keys(r.config.RawLogs)) {
-		targets = append(targets, capturelogs.Target{SourcePath: r.config.RawLogs[name], ArtifactName: rawArtifactName(name), Raw: true})
+		targets = append(targets, capturelogs.Target{SourcePath: r.config.RawLogs[name], ArtifactName: rawArtifactName(name), Raw: true, MaxBytes: r.config.MaxRawLogBytes})
 	}
 	logSnapshot, err := capturelogs.Open(targets...)
 	if err != nil {
